@@ -7,18 +7,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.example.where.auth.AuthScreen
 import com.example.where.auth.AuthViewModel
 import com.example.where.auth.GoogleSignInHandler
+import com.example.where.ui.MainScreen
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import dagger.hilt.android.AndroidEntryPoint
@@ -47,7 +40,7 @@ class MainActivity : ComponentActivity(), GoogleSignInHandler {
         setContent {
             MaterialTheme {
                 if (authViewModel.isAuthenticated) {
-                    ProjectWhereAppContent()
+                    MainScreen()
                 } else {
                     AuthScreen(
                         onAuthSuccess = { /* State is handled by AuthViewModel */ }
@@ -59,24 +52,5 @@ class MainActivity : ComponentActivity(), GoogleSignInHandler {
 
     override fun launchSignIn(signInIntent: Intent) {
         googleSignInLauncher.launch(signInIntent)
-    }
-}
-
-@Composable
-fun ProjectWhereAppContent() {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color.Black
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Hello World",
-                style = MaterialTheme.typography.headlineLarge,
-                color = Color.White
-            )
-        }
     }
 } 

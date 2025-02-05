@@ -43,3 +43,6 @@ Thumbs.db
 # Firebase App Distribution
 app/release/
 app/debug/ 
+
+# Environment Variables
+gradle.properties
