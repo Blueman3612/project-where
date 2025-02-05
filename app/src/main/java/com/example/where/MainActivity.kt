@@ -11,7 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import com.example.where.auth.AuthScreen
 import com.example.where.auth.AuthViewModel
 import com.example.where.auth.GoogleSignInHandler
-import com.example.where.ui.MainScreen
+import com.example.where.navigation.AppNavigation
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import dagger.hilt.android.AndroidEntryPoint
@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity(), GoogleSignInHandler {
         setContent {
             MaterialTheme {
                 if (authViewModel.isAuthenticated) {
-                    MainScreen()
+                    AppNavigation()
                 } else {
                     AuthScreen(
                         onAuthSuccess = { /* State is handled by AuthViewModel */ }

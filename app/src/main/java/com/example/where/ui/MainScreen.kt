@@ -42,7 +42,8 @@ import android.graphics.Color as AndroidColor
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    viewModel: MainViewModel = hiltViewModel()
+    viewModel: MainViewModel = hiltViewModel(),
+    onProfileClick: () -> Unit = {}
 ) {
     var selectedLocation by remember { mutableStateOf<LatLng?>(null) }
     var totalHeight by remember { mutableStateOf(0f) }
@@ -292,6 +293,20 @@ fun MainScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
+            },
+            navigationIcon = {
+                IconButton(
+                    onClick = onProfileClick,
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Profile",
+                        tint = Color.White
+                    )
+                }
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                 containerColor = Color.Black.copy(alpha = 0.5f)
