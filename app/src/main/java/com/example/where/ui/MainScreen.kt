@@ -28,8 +28,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.google.android.gms.maps.model.CameraPosition
@@ -56,21 +58,43 @@ fun MainScreen(
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
-                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS / 4,
-                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 4,
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 4,
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 4
+                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
                     )
                     .setPrioritizeTimeOverSizeThresholds(true)
-                    .setBackBuffer(0, false)
                     .build()
+            )
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(context)
+                    .setDataSourceFactory(
+                        DefaultHttpDataSource.Factory()
+                            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                            .setConnectTimeoutMs(DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS)
+                            .setReadTimeoutMs(DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS)
+                            .setAllowCrossProtocolRedirects(true)
+                    )
             )
             .build().apply {
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
-                repeatMode = Player.REPEAT_MODE_ALL  // Changed to REPEAT_MODE_ALL for proper looping
+                repeatMode = Player.REPEAT_MODE_ALL
                 volume = 0f
-                playWhenReady = false
+                playWhenReady = true
             }
+    }
+
+    // Update video when currentVideo changes
+    LaunchedEffect(viewModel.currentVideo) {
+        viewModel.currentVideo?.let { video ->
+            exoPlayer.apply {
+                setMediaItem(MediaItem.fromUri(video.url))
+                prepare()
+                playWhenReady = true  // Set to true to autoplay
+                play()  // Explicitly call play
+            }
+            selectedLocation = null // Reset selected location for new video
+        }
     }
 
     // Handle lifecycle events
@@ -90,16 +114,6 @@ fun MainScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             exoPlayer.release()
-        }
-    }
-
-    // Update video when currentVideo changes
-    LaunchedEffect(viewModel.currentVideo) {
-        viewModel.currentVideo?.let { video ->
-            exoPlayer.setMediaItem(MediaItem.fromUri(video.url))
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
-            selectedLocation = null // Reset selected location for new video
         }
     }
     
@@ -215,13 +229,56 @@ fun MainScreen(
 
                 // Submit Guess Button
                 Button(
-                    onClick = { /* Handle location submission */ },
+                    onClick = { 
+                        selectedLocation?.let { location ->
+                            viewModel.submitGuess(location)
+                        }
+                    },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(16.dp),
                     enabled = selectedLocation != null
                 ) {
                     Text("Submit Guess")
+                }
+                
+                // Show guess results
+                viewModel.lastGuessScore?.let { score ->
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(16.dp)
+                            .fillMaxWidth(0.8f),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                            .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = viewModel.lastGuessDistance?.let { distance ->
+                                    viewModel.formatDistance(distance)
+                                } ?: "Unknown distance",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Points: +$score",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Button(
+                                onClick = { 
+                                    viewModel.loadRandomVideo()
+                                },
+                                modifier = Modifier.padding(top = 8.dp)
+                            ) {
+                                Text("Next Video")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -230,7 +287,7 @@ fun MainScreen(
         CenterAlignedTopAppBar(
             title = {
                 Text(
-                    text = "Score: 0",
+                    text = "Score: ${viewModel.currentScore}",
                     color = Color.White,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()

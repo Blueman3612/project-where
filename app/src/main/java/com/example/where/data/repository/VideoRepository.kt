@@ -158,28 +158,28 @@ class VideoRepository @Inject constructor(
                 return
             }
             
-            // Sample videos from Pexels with their locations
-            val testVideos = listOf(
-                Triple(
-                    // Even lower resolution video for better performance
-                    "https://download.pexels.com/vimeo/720001/pexels-chicago-480p.mp4",
-                    LatLng(41.8513963, -87.6320782),
-                    "Chicago"
-                )
+            // Get the video URL from Firebase Storage
+            val videoRef = storage.reference.child("sample_videos/chicago_480p.mp4")
+            val videoUrl = videoRef.downloadUrl.await().toString()
+            Log.d(TAG, "Got video URL from Firebase Storage: $videoUrl")
+            
+            // Sample video with location
+            val testVideo = Triple(
+                videoUrl,
+                LatLng(41.8513963, -87.6320782),  // Chicago location
+                "Chicago"
             )
 
-            Log.d(TAG, "Adding ${testVideos.size} test videos...")
-            testVideos.forEach { (url, location, title) ->
-                addVideo(
-                    url = url,
-                    location = location,
-                    title = title,
-                    description = "A test video from Pexels",
-                    authorId = "test_author",
-                    source = VideoSource.PEXELS
-                )
-            }
-            Log.d(TAG, "Successfully added ${testVideos.size} test videos")
+            Log.d(TAG, "Adding test video...")
+            addVideo(
+                url = testVideo.first,
+                location = testVideo.second,
+                title = testVideo.third,
+                description = "A test video of Chicago",
+                authorId = "test_author",
+                source = VideoSource.PEXELS
+            )
+            Log.d(TAG, "Successfully added test video")
         } catch (e: Exception) {
             Log.e(TAG, "Error adding test videos: ${e.message}")
             throw e
