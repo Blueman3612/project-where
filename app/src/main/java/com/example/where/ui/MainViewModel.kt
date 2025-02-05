@@ -49,15 +49,22 @@ class MainViewModel @Inject constructor(
             lastGuessScore = null
             lastGuessDistance = null
             try {
-                // Force refresh by clearing and adding new test video
-                videoRepository.clearAllVideos()
-                videoRepository.addTestVideo()
+                // First try to get a random video
                 currentVideo = videoRepository.getRandomVideo()
                 
+                // Only add test video if none exist
                 if (currentVideo == null) {
-                    error = "Failed to load test video"
+                    Log.d("MainViewModel", "No videos found, adding test video")
+                    videoRepository.clearAllVideos() // Clear any potential corrupted data
+                    videoRepository.addTestVideo()
+                    currentVideo = videoRepository.getRandomVideo()
+                    if (currentVideo == null) {
+                        error = "Failed to load test video"
+                    } else {
+                        Log.d("MainViewModel", "Successfully loaded new test video: ${currentVideo?.url}")
+                    }
                 } else {
-                    Log.d("MainViewModel", "Successfully loaded video: ${currentVideo?.url}")
+                    Log.d("MainViewModel", "Successfully loaded existing video: ${currentVideo?.url}")
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error loading video", e)
