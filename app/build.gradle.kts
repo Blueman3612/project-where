@@ -76,6 +76,9 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-messaging")
 
+    // Google Sign In
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
+
     // Dependency Injection
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
