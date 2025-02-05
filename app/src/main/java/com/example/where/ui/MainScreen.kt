@@ -91,8 +91,8 @@ fun MainScreen(
             exoPlayer.apply {
                 setMediaItem(MediaItem.fromUri(video.url))
                 prepare()
-                playWhenReady = true  // Set to true to autoplay
-                play()  // Explicitly call play
+                playWhenReady = true
+                play()
             }
             selectedLocation = null // Reset selected location for new video
         }
@@ -106,7 +106,13 @@ fun MainScreen(
                     exoPlayer.pause()
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    exoPlayer.play()
+                    if (viewModel.currentVideo != null) {
+                        exoPlayer.play()
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    exoPlayer.stop()
+                    exoPlayer.clearMediaItems()
                 }
                 else -> {}
             }
@@ -115,6 +121,14 @@ fun MainScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             exoPlayer.release()
+        }
+    }
+
+    // Handle navigation events
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
         }
     }
     

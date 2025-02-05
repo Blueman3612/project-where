@@ -1,5 +1,6 @@
 package com.example.where.data.repository
 
+import android.net.Uri
 import android.util.Log
 import com.example.where.data.model.Video
 import com.example.where.data.model.VideoSource
@@ -70,24 +71,49 @@ class VideoRepository @Inject constructor(
     }
 
     suspend fun uploadVideo(
-        videoBytes: ByteArray,
+        videoUri: Uri,
         location: LatLng,
         title: String?,
         description: String?,
         authorId: String
     ): Video {
-        val videoRef = storage.reference.child("videos/${System.currentTimeMillis()}.mp4")
-        val uploadTask = videoRef.putBytes(videoBytes).await()
-        val videoUrl = uploadTask.storage.downloadUrl.await().toString()
+        Log.d(TAG, "Starting video upload from Uri: $videoUri")
+        
+        try {
+            // Upload video to Firebase Storage
+            val videoRef = storage.reference.child("videos/${System.currentTimeMillis()}_${authorId}.mp4")
+            
+            // Start upload with detailed error handling
+            try {
+                val uploadTask = videoRef.putFile(videoUri).await()
+                Log.d(TAG, "Video file uploaded successfully")
+                
+                val videoUrl = uploadTask.storage.downloadUrl.await().toString()
+                Log.d(TAG, "Video URL retrieved: $videoUrl")
 
-        return addVideo(
-            url = videoUrl,
-            location = location,
-            title = title,
-            description = description,
-            authorId = authorId,
-            source = VideoSource.USER_UPLOAD
-        )
+                // Add video metadata to Firestore
+                return addVideo(
+                    url = videoUrl,
+                    location = location,
+                    title = title,
+                    description = description,
+                    authorId = authorId,
+                    source = VideoSource.USER_UPLOAD
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during video upload", e)
+                when {
+                    e.message?.contains("permission") == true -> 
+                        throw Exception("Permission denied. Please check Firebase Storage rules.", e)
+                    e.message?.contains("network") == true -> 
+                        throw Exception("Network error during upload. Please check your connection.", e)
+                    else -> throw Exception("Failed to upload video: ${e.message}", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in uploadVideo", e)
+            throw e
+        }
     }
 
     suspend fun getRandomVideo(): Video? {

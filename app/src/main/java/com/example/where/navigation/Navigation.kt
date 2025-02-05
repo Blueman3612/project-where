@@ -7,10 +7,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.where.ui.MainScreen
 import com.example.where.ui.profile.ProfileScreen
+import com.example.where.ui.upload.UploadScreen
 
 sealed class Screen(val route: String) {
     object Main : Screen("main")
     object Profile : Screen("profile")
+    object Upload : Screen("upload")
 }
 
 @Composable
@@ -32,6 +34,17 @@ fun AppNavigation(
         
         composable(Screen.Profile.route) {
             ProfileScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onUploadClick = {
+                    navController.navigate(Screen.Upload.route)
+                }
+            )
+        }
+
+        composable(Screen.Upload.route) {
+            UploadScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

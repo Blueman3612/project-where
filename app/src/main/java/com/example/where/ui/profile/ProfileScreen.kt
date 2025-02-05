@@ -15,7 +15,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onUploadClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -89,7 +90,7 @@ fun ProfileScreen(
 
             // Upload Button
             Button(
-                onClick = { /* Handle video upload */ },
+                onClick = onUploadClick,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
