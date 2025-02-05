@@ -211,4 +211,20 @@ class VideoRepository @Inject constructor(
             throw e
         }
     }
+
+    suspend fun getUserUploadCount(userId: String): Int {
+        try {
+            val snapshot = videosCollection
+                .whereEqualTo("authorId", userId)
+                .whereEqualTo("source", VideoSource.USER_UPLOAD.name)
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+            
+            return snapshot.count.toInt()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting user upload count: ${e.message}")
+            throw e
+        }
+    }
 } 

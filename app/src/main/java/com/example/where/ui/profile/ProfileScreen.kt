@@ -66,24 +66,39 @@ fun ProfileScreen(
                         text = "Stats",
                         style = MaterialTheme.typography.titleMedium
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "${viewModel.uploadedVideos}",
-                                style = MaterialTheme.typography.headlineMedium
-                            )
-                            Text("Uploads")
+                    if (viewModel.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp)
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "${viewModel.uploadedVideos}",
+                                    style = MaterialTheme.typography.headlineMedium
+                                )
+                                Text("Uploads")
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "${viewModel.totalScore}",
+                                    style = MaterialTheme.typography.headlineMedium
+                                )
+                                Text("Total Score")
+                            }
                         }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "${viewModel.totalScore}",
-                                style = MaterialTheme.typography.headlineMedium
-                            )
-                            Text("Total Score")
-                        }
+                    }
+
+                    viewModel.error?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
