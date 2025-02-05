@@ -1,50 +1,54 @@
-# Welcome to your Expo app 👋
+# Project Where
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A TikTok-style mobile app with location guessing features similar to GeoGuessr. Users can watch short videos and try to guess where they were recorded.
 
-## Get started
+## Tech Stack
 
-1. Install dependencies
+- **Language**: Kotlin
+- **UI Framework**: Jetpack Compose
+- **Backend**: Firebase
+  - Authentication
+  - Firestore
+  - Storage
+  - Cloud Messaging
+  - App Distribution
+- **Dependencies**:
+  - ExoPlayer for video playback
+  - Google Maps Compose
+  - Hilt for dependency injection
+  - Coil for image loading
 
-   ```bash
-   npm install
-   ```
+## Setup Instructions
 
-2. Start the app
+1. Open the project in Android Studio
+2. Sync project with Gradle files
+3. Create a Firebase project and add your `google-services.json` to the `app` directory
+4. Run the app using an emulator or physical device
 
-   ```bash
-    npx expo start
-   ```
+## Firebase Setup
 
-In the output, you'll find options to open the app in a
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Create a new project
+3. Add an Android app with package name `com.projectwhere.app`
+4. Download `google-services.json` and place it in the `app` directory
+5. Enable required Firebase services:
+   - Authentication
+   - Firestore Database
+   - Storage
+   - Cloud Messaging
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Development
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+The project uses the latest Android development best practices:
+- MVVM architecture
+- Dependency injection with Hilt
+- Jetpack Compose for modern UI development
+- Kotlin Coroutines for asynchronous operations
 
-## Get a fresh project
+## Testing
 
-When you're ready, run:
-
+Run tests using:
 ```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+./gradlew test        # Unit tests
+./gradlew connectedAndroidTest  # Instrumentation tests
+``` 
