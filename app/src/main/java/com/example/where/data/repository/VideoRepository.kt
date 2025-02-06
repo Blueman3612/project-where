@@ -19,6 +19,9 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 import java.io.IOException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.google.firebase.auth.FirebaseAuth
 
 private const val TAG = "VideoRepository"
 
@@ -113,12 +116,16 @@ class VideoRepository @Inject constructor(
                 val videoUrl = uploadTask.storage.downloadUrl.await().toString()
                 Log.d(TAG, "Video URL retrieved: $videoUrl")
 
+                // Generate and upload thumbnail
+                val thumbnailUrl = generateAndUploadThumbnail(videoUri, authorId)
+
                 // Add video metadata to Firestore
                 return addVideo(
                     url = videoUrl,
                     location = location,
                     title = title,
                     description = description,
+                    thumbnailUrl = thumbnailUrl,
                     authorId = authorId,
                     source = VideoSource.USER_UPLOAD
                 )
@@ -135,6 +142,219 @@ class VideoRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error in uploadVideo", e)
             throw e
+        }
+    }
+
+    private suspend fun generateAndUploadThumbnail(videoUri: Uri, authorId: String): String? {
+        try {
+            val retriever = android.media.MediaMetadataRetriever()
+            retriever.setDataSource(context, videoUri)
+            
+            // Get the first frame
+            val bitmap = retriever.getFrameAtTime(0)
+            retriever.release()
+
+            if (bitmap != null) {
+                // Convert bitmap to bytes
+                val baos = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+                val data = baos.toByteArray()
+                bitmap.recycle()
+
+                // Upload thumbnail
+                val thumbnailRef = storage.reference.child("thumbnails/${System.currentTimeMillis()}_${authorId}.jpg")
+                thumbnailRef.putBytes(data).await()
+                return thumbnailRef.downloadUrl.await().toString()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating thumbnail: ${e.message}")
+        }
+        return null
+    }
+
+    private suspend fun extractThumbnail(retriever: android.media.MediaMetadataRetriever): android.graphics.Bitmap? {
+        try {
+            // Try to get video duration
+            val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+            val duration = durationStr?.toLongOrNull() ?: 0L
+            Log.d(TAG, "Video duration: ${duration}ms")
+
+            // Try different time positions throughout the video
+            val timePositions = mutableListOf<Long>()
+            timePositions.add(0L) // First frame
+            
+            if (duration > 0) {
+                timePositions.addAll(listOf(
+                    duration / 4,           // 25% of video
+                    duration / 2,           // 50% of video
+                    (duration * 3) / 4,     // 75% of video
+                    duration - 1000         // 1 second before end
+                ))
+            } else {
+                // If duration unknown, try fixed positions
+                timePositions.addAll(listOf(
+                    500000L,    // 0.5 seconds
+                    1000000L,   // 1 second
+                    2000000L,   // 2 seconds
+                    5000000L,   // 5 seconds
+                    10000000L   // 10 seconds
+                ))
+            }
+            
+            for (timePosition in timePositions) {
+                try {
+                    Log.d(TAG, "Attempting to extract frame at ${timePosition/1000.0}s")
+                    
+                    // Try both precise and non-precise frame extraction
+                    var bitmap = retriever.getFrameAtTime(timePosition, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                    if (bitmap == null) {
+                        Log.d(TAG, "Trying without OPTION_CLOSEST at ${timePosition/1000.0}s")
+                        bitmap = retriever.getFrameAtTime(timePosition)
+                    }
+                    
+                    if (bitmap != null) {
+                        // Verify the bitmap is valid
+                        if (bitmap.width > 0 && bitmap.height > 0) {
+                            Log.d(TAG, "Successfully extracted frame at ${timePosition/1000.0}s (${bitmap.width}x${bitmap.height})")
+                            return bitmap
+                        } else {
+                            Log.e(TAG, "Invalid bitmap dimensions at ${timePosition/1000.0}s: ${bitmap.width}x${bitmap.height}")
+                            bitmap.recycle()
+                        }
+                    } else {
+                        Log.e(TAG, "No frame extracted at ${timePosition/1000.0}s")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error extracting frame at ${timePosition/1000.0}s: ${e.message}")
+                }
+            }
+            
+            // If all attempts failed, try one last time with default options
+            try {
+                Log.d(TAG, "Attempting final frame extraction with default options")
+                val bitmap = retriever.getFrameAtTime()
+                if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
+                    Log.d(TAG, "Successfully extracted frame with default options (${bitmap.width}x${bitmap.height})")
+                    return bitmap
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in final frame extraction attempt: ${e.message}")
+            }
+            
+            return null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in extractThumbnail: ${e.message}")
+            return null
+        }
+    }
+
+    suspend fun generateThumbnailForExistingVideo(videoUrl: String, videoId: String): String? {
+        Log.d(TAG, "Starting thumbnail generation for video $videoId")
+        
+        // Check if user is authenticated
+        if (FirebaseAuth.getInstance().currentUser == null) {
+            Log.e(TAG, "Cannot generate thumbnail: User not authenticated")
+            return null
+        }
+        
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                // Create a temporary file to store the video data
+                val tempFile = java.io.File.createTempFile("video_", ".mp4", context.cacheDir)
+                Log.d(TAG, "Created temp file: ${tempFile.absolutePath}")
+                
+                try {
+                    // Download a larger portion of the video to the temp file
+                    val connection = java.net.URL(videoUrl).openConnection() as java.net.HttpURLConnection
+                    connection.setRequestProperty("Range", "bytes=0-1048576") // First 1MB to get more frames
+                    connection.connectTimeout = 15000 // 15 seconds timeout
+                    connection.readTimeout = 15000
+                    
+                    Log.d(TAG, "Downloading video segment from: $videoUrl")
+                    connection.inputStream.use { input ->
+                        tempFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    connection.disconnect()
+                    Log.d(TAG, "Video segment downloaded successfully")
+
+                    // Use the temp file for thumbnail generation
+                    val retriever = android.media.MediaMetadataRetriever()
+                    retriever.setDataSource(tempFile.absolutePath)
+                    
+                    // Log video metadata
+                    try {
+                        val width = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                        val height = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                        val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                        val duration = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        Log.d(TAG, "Video metadata - Width: $width, Height: $height, Rotation: $rotation, Duration: ${duration}ms")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error reading video metadata: ${e.message}")
+                    }
+                    
+                    // Try to extract thumbnail
+                    val bitmap = extractThumbnail(retriever)
+                    retriever.release()
+
+                    if (bitmap != null) {
+                        Log.d(TAG, "Successfully extracted thumbnail frame")
+                        // Convert bitmap to bytes
+                        val baos = java.io.ByteArrayOutputStream()
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+                        val data = baos.toByteArray()
+                        bitmap.recycle()
+
+                        // Upload thumbnail
+                        val thumbnailRef = storage.reference.child("thumbnails/${videoId}.jpg")
+                        Log.d(TAG, "Uploading thumbnail to Firebase Storage")
+                        try {
+                            thumbnailRef.putBytes(data).await()
+                            val thumbnailUrl = thumbnailRef.downloadUrl.await().toString()
+                            Log.d(TAG, "Thumbnail uploaded successfully: $thumbnailUrl")
+
+                            try {
+                                // Update video document with thumbnail URL
+                                videosCollection.document(videoId)
+                                    .update(mapOf(
+                                        "thumbnailUrl" to thumbnailUrl
+                                    ))
+                                    .await()
+                                Log.d(TAG, "Video document updated with thumbnail URL")
+                                thumbnailUrl
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error updating Firestore document: ${e.message}", e)
+                                if (e.message?.contains("permission") == true) {
+                                    Log.e(TAG, "Permission denied. Please check Firestore rules for updating thumbnailUrl")
+                                }
+                                thumbnailUrl // Still return the URL even if Firestore update fails
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error uploading thumbnail: ${e.message}", e)
+                            if (e.message?.contains("permission") == true) {
+                                Log.e(TAG, "Permission denied. Please check Firebase Storage rules for /thumbnails/ folder")
+                            }
+                            null
+                        }
+                    } else {
+                        Log.e(TAG, "Failed to extract thumbnail frame after trying multiple positions")
+                        null
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during thumbnail generation: ${e.message}", e)
+                    throw e
+                } finally {
+                    // Clean up the temp file
+                    if (tempFile.exists()) {
+                        tempFile.delete()
+                        Log.d(TAG, "Cleaned up temp file")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating thumbnail for video $videoId: ${e.message}", e)
+                null
+            }
         }
     }
 
@@ -358,6 +578,75 @@ class VideoRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error getting user liked videos: ${e.message}")
             throw e
+        }
+    }
+
+    suspend fun getUserVideos(userId: String): List<Video> {
+        try {
+            val snapshot = videosCollection
+                .whereEqualTo("authorId", userId)
+                .get()
+                .await()
+            
+            return snapshot.documents.mapNotNull { doc -> 
+                doc.data?.let { Video.fromMap(it) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting user videos: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun generateMissingThumbnails(): Int {
+        var successCount = 0
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                Log.d(TAG, "Starting batch thumbnail generation...")
+                
+                // Get all videos without thumbnails or with empty thumbnails
+                val snapshot = videosCollection
+                    .get()
+                    .await()
+                
+                val videosNeedingThumbnails = snapshot.documents.filter { doc ->
+                    val thumbnailUrl = doc.getString("thumbnailUrl")
+                    thumbnailUrl == null || thumbnailUrl.isEmpty()
+                }
+                
+                Log.d(TAG, "Found ${videosNeedingThumbnails.size} videos needing thumbnails")
+                
+                videosNeedingThumbnails.forEach { doc ->
+                    try {
+                        Log.d(TAG, "Processing document: ${doc.id}")
+                        Log.d(TAG, "Document data: ${doc.data}")
+                        
+                        doc.data?.let { data ->
+                            val video = Video.fromMap(data)
+                            if (video != null) {
+                                Log.d(TAG, "Generating thumbnail for video ${video.id} with URL: ${video.url}")
+                                val thumbnailUrl = generateThumbnailForExistingVideo(video.url, video.id)
+                                if (thumbnailUrl != null) {
+                                    successCount++
+                                    Log.d(TAG, "Successfully generated thumbnail $successCount/${videosNeedingThumbnails.size} - URL: $thumbnailUrl")
+                                } else {
+                                    Log.e(TAG, "Failed to generate thumbnail for video ${video.id}")
+                                }
+                            } else {
+                                Log.e(TAG, "Failed to parse video data for document ${doc.id}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing video ${doc.id}: ${e.message}", e)
+                        // Continue with next video even if one fails
+                    }
+                }
+                
+                Log.d(TAG, "Batch thumbnail generation completed. Success: $successCount/${videosNeedingThumbnails.size}")
+                successCount
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in batch thumbnail generation: ${e.message}", e)
+                successCount
+            }
         }
     }
 } 

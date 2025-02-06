@@ -32,7 +32,7 @@ data class Video(
         "source" to source.name,
         "likes" to likes,
         "createdAt" to createdAt
-    )
+    ).filterValues { it != null }
 
     companion object {
         fun fromMap(map: Map<String, Any>): Video? {
