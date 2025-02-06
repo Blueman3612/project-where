@@ -1,5 +1,6 @@
 package com.example.where.data.repository
 
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.example.where.data.model.Video
@@ -10,18 +11,22 @@ import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageMetadata
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.io.IOException
 
 private const val TAG = "VideoRepository"
 
 @Singleton
 class VideoRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val storage: FirebaseStorage
+    private val storage: FirebaseStorage,
+    @ApplicationContext private val context: Context
 ) {
     private val videosCollection = firestore.collection("videos")
     
@@ -80,12 +85,28 @@ class VideoRepository @Inject constructor(
         Log.d(TAG, "Starting video upload from Uri: $videoUri")
         
         try {
-            // Upload video to Firebase Storage
+            // Upload video to Firebase Storage with chunked upload
             val videoRef = storage.reference.child("videos/${System.currentTimeMillis()}_${authorId}.mp4")
             
             // Start upload with detailed error handling
             try {
-                val uploadTask = videoRef.putFile(videoUri).await()
+                val stream = context.contentResolver.openInputStream(videoUri)
+                    ?: throw IOException("Failed to open video stream")
+
+                val metadata = StorageMetadata.Builder()
+                    .setContentType("video/mp4")
+                    .build()
+
+                // Use putStream instead of putFile for better memory management
+                val uploadTask = stream.use { inputStream ->
+                    videoRef.putStream(inputStream, metadata)
+                        .addOnProgressListener { taskSnapshot ->
+                            val progress = (100.0 * taskSnapshot.bytesTransferred / taskSnapshot.totalByteCount)
+                            Log.d(TAG, "Upload progress: $progress%")
+                        }
+                        .await()
+                }
+
                 Log.d(TAG, "Video file uploaded successfully")
                 
                 val videoUrl = uploadTask.storage.downloadUrl.await().toString()

@@ -13,13 +13,17 @@ import com.example.where.data.repository.VideoRepository
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
 class UploadViewModel @Inject constructor(
     private val videoRepository: VideoRepository,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     var selectedVideoUri by mutableStateOf<Uri?>(null)
@@ -110,12 +114,28 @@ class UploadViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             isUploading = true
             error = null
             uploadComplete = false
             
             try {
+                // Check video size before upload
+                val videoSize = videoUri.let { uri ->
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { 
+                        it.statSize 
+                    } ?: 0L
+                }
+
+                // If video is too large (>50MB), show error
+                if (videoSize > 50 * 1024 * 1024) {
+                    withContext(Dispatchers.Main) {
+                        error = "Video is too large. Please select a video under 50MB."
+                    }
+                    return@launch
+                }
+
+                // Upload in chunks to avoid memory pressure
                 videoRepository.uploadVideo(
                     videoUri = videoUri,
                     location = location,
@@ -123,16 +143,23 @@ class UploadViewModel @Inject constructor(
                     description = null,
                     authorId = userId
                 )
-                // Reset state after successful upload
-                selectedVideoUri = null
-                selectedLocation = null
-                uploadComplete = true
+
+                withContext(Dispatchers.Main) {
+                    // Reset state after successful upload
+                    selectedVideoUri = null
+                    selectedLocation = null
+                    uploadComplete = true
+                }
             } catch (e: Exception) {
                 Log.e("UploadViewModel", "Error uploading video", e)
-                error = e.message ?: "Failed to upload video"
-                uploadComplete = false
+                withContext(Dispatchers.Main) {
+                    error = e.message ?: "Failed to upload video"
+                    uploadComplete = false
+                }
             } finally {
-                isUploading = false
+                withContext(Dispatchers.Main) {
+                    isUploading = false
+                }
             }
         }
     }
