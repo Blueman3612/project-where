@@ -80,74 +80,76 @@ fun MainScreen(
         MemoryTracker.logMemoryUsage("Composition")
     }
     
-    // ExoPlayer setup with memory tracking
+    // Create two ExoPlayers - one for current and one for preloading
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val playerRef = remember { mutableStateOf<ExoPlayer?>(null) }
-    val exoPlayer = remember { 
-        MemoryTracker.logMemoryUsage("ExoPlayer Creation")
-        ExoPlayer.Builder(context)
-            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
-            .setLoadControl(
-                DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(
-                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS / 2,
-                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 2,
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 2,
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 2
-                    )
-                    .setPrioritizeTimeOverSizeThresholds(true)
-                    .build()
-            )
-            .setMediaSourceFactory(
-                DefaultMediaSourceFactory(context)
-                    .setDataSourceFactory(
-                        DefaultHttpDataSource.Factory()
-                            .setUserAgent("Mozilla/5.0")
-                            .setConnectTimeoutMs(8000)
-                            .setReadTimeoutMs(8000)
-                            .setAllowCrossProtocolRedirects(true)
-                    )
-            )
-            .build().apply {
-                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
-                repeatMode = Player.REPEAT_MODE_ONE
-                volume = 0f
-                playWhenReady = false
-            }.also {
-                playerRef.value?.release()
-                playerRef.value = it
-            }
+    
+    val currentPlayerRef = remember { mutableStateOf<ExoPlayer?>(null) }
+    val preloadPlayerRef = remember { mutableStateOf<ExoPlayer?>(null) }
+    val currentPlayerView = remember { mutableStateOf<WeakReference<PlayerView>?>(null) }
+    
+    fun createOptimizedPlayer() = ExoPlayer.Builder(context)
+        .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    DefaultLoadControl.DEFAULT_MIN_BUFFER_MS / 2,
+                    DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 2,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 2,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 2
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+        )
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(context)
+                .setDataSourceFactory(
+                    DefaultHttpDataSource.Factory()
+                        .setUserAgent("Mozilla/5.0")
+                        .setConnectTimeoutMs(8000)
+                        .setReadTimeoutMs(8000)
+                        .setAllowCrossProtocolRedirects(true)
+                )
+        )
+        .build().apply {
+            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+            repeatMode = Player.REPEAT_MODE_ONE
+            volume = 0f
+            playWhenReady = false
+        }
+
+    val currentPlayer = remember { 
+        createOptimizedPlayer().also {
+            currentPlayerRef.value?.release()
+            currentPlayerRef.value = it
+        }
     }
 
-    // Single DisposableEffect to handle all cleanup
+    val preloadPlayer = remember {
+        createOptimizedPlayer().also {
+            preloadPlayerRef.value?.release()
+            preloadPlayerRef.value = it
+        }
+    }
+
+    // Handle cleanup
     DisposableEffect(lifecycleOwner) {
-        var playerView by mutableStateOf<PlayerView?>(null)
-        
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
-                    Log.d(TAG, "Lifecycle: ON_PAUSE")
-                    MemoryTracker.logMemoryUsage("ON_PAUSE")
-                    exoPlayer.pause()
+                    currentPlayer.pause()
+                    preloadPlayer.pause()
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    Log.d(TAG, "Lifecycle: ON_RESUME")
-                    MemoryTracker.logMemoryUsage("ON_RESUME")
                     if (viewModel.currentVideo != null) {
-                        exoPlayer.prepare()
-                        exoPlayer.play()
+                        currentPlayer.play()
                     }
                 }
                 Lifecycle.Event.ON_STOP -> {
-                    Log.d(TAG, "Lifecycle: ON_STOP")
-                    MemoryTracker.logMemoryUsage("ON_STOP")
-                    exoPlayer.stop()
-                    exoPlayer.clearMediaItems()
-                }
-                Lifecycle.Event.ON_DESTROY -> {
-                    Log.d(TAG, "Lifecycle: ON_DESTROY")
-                    MemoryTracker.logMemoryUsage("ON_DESTROY")
+                    currentPlayer.stop()
+                    preloadPlayer.stop()
+                    currentPlayer.clearMediaItems()
+                    preloadPlayer.clearMediaItems()
                 }
                 else -> {}
             }
@@ -156,47 +158,54 @@ fun MainScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
 
         onDispose {
-            Log.d(TAG, "DisposableEffect: Cleaning up resources")
-            MemoryTracker.logMemoryUsage("Before Cleanup")
-            
             lifecycleOwner.lifecycle.removeObserver(observer)
-            playerView?.player = null
-            playerView = null
+            currentPlayerView.value?.get()?.player = null
+            currentPlayerView.value = null
             
-            exoPlayer.stop()
-            exoPlayer.clearMediaItems()
-            exoPlayer.release()
-            playerRef.value = null
+            currentPlayer.stop()
+            preloadPlayer.stop()
+            currentPlayer.clearMediaItems()
+            preloadPlayer.clearMediaItems()
+            currentPlayer.release()
+            preloadPlayer.release()
+            currentPlayerRef.value = null
+            preloadPlayerRef.value = null
             
-            MemoryTracker.logMemoryUsage("After Cleanup")
             System.gc()
         }
     }
 
-    // Update video when currentVideo changes
+    // Handle current video changes
     LaunchedEffect(viewModel.currentVideo) {
-        try {
-            Log.d(TAG, "Loading new video")
-            MemoryTracker.logMemoryUsage("Before Video Load")
-            
-            viewModel.currentVideo?.let { video ->
-                exoPlayer.apply {
-                    stop()
-                    clearMediaItems()
-                    setMediaItem(MediaItem.fromUri(video.url))
-                    prepare()
-                    playWhenReady = true
-                }
-                selectedLocation = null
-            } ?: run {
-                exoPlayer.stop()
-                exoPlayer.clearMediaItems()
+        viewModel.currentVideo?.let { video ->
+            currentPlayer.apply {
+                setMediaItem(MediaItem.fromUri(video.url))
+                prepare()
+                playWhenReady = true
             }
-            
-            MemoryTracker.logMemoryUsage("After Video Load")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading video", e)
         }
+    }
+
+    // Handle preloading of next video
+    LaunchedEffect(viewModel.nextVideo) {
+        viewModel.nextVideo?.let { video ->
+            preloadPlayer.apply {
+                setMediaItem(MediaItem.fromUri(video.url))
+                prepare()
+                playWhenReady = false
+            }
+        }
+    }
+
+    // Video completion listener
+    LaunchedEffect(currentPlayer) {
+        currentPlayer.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) {
+                    viewModel.switchToNextVideo()
+                }
+            }
+        })
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -217,13 +226,15 @@ fun MainScreen(
                     AndroidView(
                         factory = { context ->
                             PlayerView(context).apply {
-                                player = exoPlayer
+                                player = currentPlayer
                                 layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-                                useController = false // Disable default controller
+                                useController = false
                                 setKeepContentOnPlayerReset(true)
                                 setShutterBackgroundColor(AndroidColor.BLACK)
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                                 setKeepScreenOn(true)
+                            }.also { playerView ->
+                                currentPlayerView.value = WeakReference(playerView)
                             }
                         },
                         modifier = Modifier.fillMaxSize()
@@ -257,7 +268,7 @@ fun MainScreen(
                     }
 
                     IconButton(
-                        onClick = { viewModel.loadRandomVideo() },
+                        onClick = { viewModel.switchToNextVideo() },
                         modifier = Modifier
                             .size(48.dp)
                             .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
@@ -353,7 +364,7 @@ fun MainScreen(
                             )
                             Button(
                                 onClick = { 
-                                    viewModel.loadRandomVideo()
+                                    viewModel.switchToNextVideo()
                                 },
                                 modifier = Modifier.padding(top = 8.dp)
                             ) {

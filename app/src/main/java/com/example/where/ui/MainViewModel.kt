@@ -20,11 +20,14 @@ class MainViewModel @Inject constructor(
     private val videoRepository: VideoRepository
 ) : ViewModel() {
 
-    var currentVideo by mutableStateOf<Video?>(null)
-        private set
-
-    var isLoading by mutableStateOf(false)
-        private set
+    private var _currentVideo = mutableStateOf<Video?>(null)
+    val currentVideo: Video? get() = _currentVideo.value
+    
+    private var _nextVideo = mutableStateOf<Video?>(null)
+    val nextVideo: Video? get() = _nextVideo.value
+    
+    private var _isLoading = mutableStateOf(false)
+    val isLoading: Boolean get() = _isLoading.value
 
     var error by mutableStateOf<String?>(null)
         private set
@@ -39,42 +42,35 @@ class MainViewModel @Inject constructor(
         private set
 
     init {
-        loadRandomVideo()
-    }
-
-    fun loadRandomVideo() {
         viewModelScope.launch {
-            isLoading = true
-            error = null
-            lastGuessScore = null
-            lastGuessDistance = null
-            try {
-                // First try to get a random video
-                currentVideo = videoRepository.getRandomVideo()
-                
-                // Only add test video if none exist
-                if (currentVideo == null) {
-                    Log.d("MainViewModel", "No videos found, adding test video")
-                    videoRepository.clearAllVideos() // Clear any potential corrupted data
-                    videoRepository.addTestVideo()
-                    currentVideo = videoRepository.getRandomVideo()
-                    if (currentVideo == null) {
-                        error = "Failed to load test video"
-                    } else {
-                        Log.d("MainViewModel", "Successfully loaded new test video: ${currentVideo?.url}")
-                    }
-                } else {
-                    Log.d("MainViewModel", "Successfully loaded existing video: ${currentVideo?.url}")
-                }
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "Error loading video", e)
-                error = "Error loading video: ${e.message}"
-            } finally {
-                isLoading = false
-            }
+            loadNextVideo()
         }
     }
-    
+
+    private suspend fun loadNextVideo() {
+        try {
+            _isLoading.value = true
+            val video = videoRepository.getRandomVideo()
+            if (_currentVideo.value == null) {
+                _currentVideo.value = video
+            } else {
+                _nextVideo.value = video
+            }
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Error loading video: ${e.message}")
+        } finally {
+            _isLoading.value = false
+        }
+    }
+
+    fun switchToNextVideo() {
+        viewModelScope.launch {
+            _currentVideo.value = _nextVideo.value
+            _nextVideo.value = null
+            loadNextVideo()
+        }
+    }
+
     fun submitGuess(guessLocation: LatLng) {
         currentVideo?.let { video ->
             val distanceMeters = calculateDistance(guessLocation, video.location)
