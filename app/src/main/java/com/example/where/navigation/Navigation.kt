@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.where.ui.MainScreen
 import com.example.where.ui.profile.ProfileScreen
 import com.example.where.ui.upload.UploadScreen
+import com.example.where.ui.auth.AuthScreen
 
 sealed class Screen(
     val route: String,
@@ -152,10 +153,11 @@ fun AppNavigation(
                 }
 
                 composable(Screen.Auth.route) {
-                    // Auth screen will be implemented later
-                    Box(modifier = Modifier) {
-                        Text("Auth Screen Coming Soon")
-                    }
+                    AuthScreen(
+                        onNavigateBack = {
+                            navController.popBackStack()
+                        }
+                    )
                 }
             }
         }

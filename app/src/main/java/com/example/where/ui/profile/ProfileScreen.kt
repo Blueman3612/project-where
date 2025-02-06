@@ -29,6 +29,8 @@ import com.example.where.data.model.Video
 import com.example.where.ui.components.VideoThumbnail
 import com.example.where.ui.components.LoadingSpinner
 import kotlinx.coroutines.launch
+import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.material.icons.filled.ExitToApp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,7 +63,7 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Profile Header
+            // Profile Header with sign out button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -117,14 +119,34 @@ fun ProfileScreen(
                     )
                 }
 
-                // Edit Button
-                IconButton(
-                    onClick = {
-                        showEditDialog = true
-                        tempBio = user?.bio ?: ""
-                    }
+                // Edit and Sign Out buttons
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
+                    // Edit Button
+                    IconButton(
+                        onClick = {
+                            showEditDialog = true
+                            tempBio = user?.bio ?: ""
+                        }
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
+                    }
+                    
+                    // Sign Out Button
+                    IconButton(
+                        onClick = {
+                            FirebaseAuth.getInstance().signOut()
+                            onNavigateToAuth()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ExitToApp,
+                            contentDescription = "Sign Out",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
 

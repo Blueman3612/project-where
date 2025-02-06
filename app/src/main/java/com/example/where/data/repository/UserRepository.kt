@@ -33,9 +33,8 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun createUser(email: String): User? {
+    suspend fun createUser(email: String, username: String): User? {
         val userId = auth.currentUser?.uid ?: return null
-        val username = email.substringBefore("@") // Default username from email
         
         val user = User(
             id = userId,
@@ -99,6 +98,23 @@ class UserRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error updating profile: ${e.message}")
             return null
+        }
+    }
+
+    suspend fun updateUsername(userId: String, username: String): Boolean {
+        return try {
+            // First check if username is available
+            if (!checkUsernameAvailable(username)) {
+                return false
+            }
+
+            usersCollection.document(userId)
+                .update("username", username)
+                .await()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating username: ${e.message}")
+            false
         }
     }
 
