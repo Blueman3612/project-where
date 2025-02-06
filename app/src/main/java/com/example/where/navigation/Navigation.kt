@@ -12,14 +12,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.where.ui.MainScreen
 import com.example.where.ui.profile.ProfileScreen
 import com.example.where.ui.upload.UploadScreen
 import com.example.where.ui.auth.AuthScreen
+import com.example.where.ui.search.SearchScreen
 
 sealed class Screen(
     val route: String,
@@ -33,6 +36,9 @@ sealed class Screen(
     object Profile : Screen("profile", "Profile", Icons.Default.Person)
     
     // Other screens not in bottom nav
+    object UserProfile : Screen("search/user/{userId}", "User Profile", Icons.Default.Person) {
+        fun createRoute(userId: String) = "search/user/$userId"
+    }
     object Video : Screen("video/{videoId}", "Video", Icons.Default.VideoLibrary) {
         fun createRoute(videoId: String) = "video/$videoId"
     }
@@ -55,6 +61,9 @@ fun AppNavigation(
     
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    
+    // Determine if we're in the search section (either search or user profile)
+    val isInSearchSection = currentRoute?.startsWith("search") ?: false
 
     Scaffold(
         bottomBar = {
@@ -63,7 +72,10 @@ fun AppNavigation(
                 tonalElevation = 8.dp
             ) {
                 bottomNavItems.forEach { screen ->
-                    val selected = currentRoute == screen.route
+                    val selected = when (screen) {
+                        Screen.Search -> isInSearchSection
+                        else -> currentRoute == screen.route
+                    }
                     NavigationBarItem(
                         icon = {
                             Icon(
@@ -79,12 +91,30 @@ fun AppNavigation(
                         label = { Text(screen.title) },
                         selected = selected,
                         onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            when (screen) {
+                                Screen.Search -> {
+                                    // If already in search section, pop back to search
+                                    if (isInSearchSection) {
+                                        navController.popBackStack(Screen.Search.route, false)
+                                    } else {
+                                        navController.navigate(screen.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
                                 }
-                                launchSingleTop = true
-                                restoreState = true
+                                else -> {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
                             }
                         },
                         colors = NavigationBarItemDefaults.colors(
@@ -128,10 +158,11 @@ fun AppNavigation(
                 }
                 
                 composable(Screen.Search.route) {
-                    // Placeholder for Search screen
-                    Box(modifier = Modifier) {
-                        Text("Coming Soon: Search")
-                    }
+                    SearchScreen(
+                        onNavigateToProfile = { userId ->
+                            navController.navigate(Screen.UserProfile.createRoute(userId))
+                        }
+                    )
                 }
                 
                 composable(Screen.Profile.route) {
@@ -143,6 +174,29 @@ fun AppNavigation(
                             navController.navigate(Screen.Auth.route)
                         }
                     )
+                }
+
+                composable(
+                    route = Screen.UserProfile.route,
+                    arguments = listOf(
+                        navArgument("userId") { type = NavType.StringType }
+                    )
+                ) { backStackEntry ->
+                    val userId = backStackEntry.arguments?.getString("userId")
+                    if (userId != null) {
+                        ProfileScreen(
+                            userId = userId,
+                            onNavigateToVideo = { videoId ->
+                                navController.navigate(Screen.Video.createRoute(videoId))
+                            },
+                            onNavigateToAuth = {
+                                navController.navigate(Screen.Auth.route)
+                            },
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            }
+                        )
+                    }
                 }
 
                 composable(Screen.Video.route) {

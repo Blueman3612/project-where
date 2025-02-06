@@ -36,16 +36,17 @@ class ProfileViewModel @Inject constructor(
     val error: StateFlow<String?> = _error.asStateFlow()
 
     init {
-        loadUserProfile()
-        loadUserVideos()
+        loadProfile()
     }
 
-    private fun loadUserProfile() {
+    fun loadProfile(userId: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                auth.currentUser?.uid?.let { userId ->
-                    _user.value = userRepository.getUser(userId)
+                val targetUserId = userId ?: auth.currentUser?.uid
+                if (targetUserId != null) {
+                    _user.value = userRepository.getUser(targetUserId)
+                    loadUserVideos(targetUserId)
                 }
             } catch (e: Exception) {
                 _error.value = "Failed to load profile: ${e.message}"
@@ -55,19 +56,17 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    private fun loadUserVideos() {
+    private fun loadUserVideos(userId: String) {
         viewModelScope.launch {
             try {
-                auth.currentUser?.uid?.let { userId ->
-                    videoRepository.getUserVideos(userId)
-                        .catch { e ->
-                            _error.value = "Failed to load videos: ${e.message}"
-                            _videos.value = emptyList()
-                        }
-                        .collect { videos ->
-                            _videos.value = videos
-                        }
-                }
+                videoRepository.getUserVideos(userId)
+                    .catch { e ->
+                        _error.value = "Failed to load videos: ${e.message}"
+                        _videos.value = emptyList()
+                    }
+                    .collect { videos ->
+                        _videos.value = videos
+                    }
             } catch (e: Exception) {
                 _error.value = "Failed to load videos: ${e.message}"
                 _videos.value = emptyList()

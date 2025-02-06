@@ -27,6 +27,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Person
 import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.SolidColor
 
 @Composable
 fun AuthScreen(
@@ -122,19 +123,19 @@ fun AuthScreen(
 
             if (!showRegistrationDialog) {
                 // Sign In Form
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { 
-                        email = it
-                        emailError = null
-                    },
-                    label = { Text("Email") },
-                    leadingIcon = { Icon(Icons.Default.Email, contentDescription = "Email") },
-                    isError = emailError != null,
-                    supportingText = { emailError?.let { Text(it) } },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier = Modifier
-                        .fillMaxWidth()
+            OutlinedTextField(
+                value = email,
+                onValueChange = { 
+                    email = it
+                    emailError = null
+                },
+                label = { Text("Email") },
+                leadingIcon = { Icon(Icons.Default.Email, contentDescription = "Email") },
+                isError = emailError != null,
+                supportingText = { emailError?.let { Text(it) } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier
+                    .fillMaxWidth()
                         .padding(vertical = 8.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
@@ -147,21 +148,21 @@ fun AuthScreen(
                         focusedLeadingIconColor = Color.White,
                         cursorColor = Color.White
                     )
-                )
+            )
 
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { 
-                        password = it
-                        passwordError = null
-                    },
-                    label = { Text("Password") },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    isError = passwordError != null,
-                    supportingText = { passwordError?.let { Text(it) } },
-                    modifier = Modifier
-                        .fillMaxWidth()
+            OutlinedTextField(
+                value = password,
+                onValueChange = { 
+                    password = it
+                    passwordError = null
+                },
+                label = { Text("Password") },
+                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                isError = passwordError != null,
+                supportingText = { passwordError?.let { Text(it) } },
+                modifier = Modifier
+                    .fillMaxWidth()
                         .padding(vertical = 8.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
@@ -201,19 +202,19 @@ fun AuthScreen(
                         .padding(vertical = 8.dp)
                 ) {
                     Text("Create Account")
-                }
+            }
 
-                OutlinedButton(
-                    onClick = { 
-                        isLoading = true
-                        viewModel.signInWithGoogle(context, signInHandler)
-                    },
-                    enabled = !isLoading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    Text("Sign in with Google")
+            OutlinedButton(
+                onClick = { 
+                    isLoading = true
+                    viewModel.signInWithGoogle(context, signInHandler)
+                },
+                enabled = !isLoading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Text("Sign in with Google")
                 }
             }
 
@@ -238,6 +239,34 @@ fun AuthScreen(
                 color = Color.White.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 16.dp, start = 32.dp, end = 32.dp)
             )
+        }
+
+        // Test Users Generator Button (bottom-right corner)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.BottomEnd
+        ) {
+            OutlinedButton(
+                onClick = { 
+                    scope.launch {
+                        viewModel.generateTestUsers()
+                    }
+                },
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color.White.copy(alpha = 0.5f)
+                ),
+                border = ButtonDefaults.outlinedButtonBorder.copy(
+                    brush = SolidColor(Color.White.copy(alpha = 0.3f))
+                ),
+                modifier = Modifier.size(width = 120.dp, height = 40.dp)
+            ) {
+                Text(
+                    "Generate Users",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
     }
 

@@ -35,14 +35,22 @@ import androidx.compose.material.icons.filled.ExitToApp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
+    userId: String? = null,
     onNavigateToVideo: (String) -> Unit,
     onNavigateToAuth: () -> Unit,
+    onNavigateBack: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
+    // Load the specified user's profile or current user if userId is null
+    LaunchedEffect(userId) {
+        viewModel.loadProfile(userId)
+    }
+
     val user by viewModel.user.collectAsState()
     val videos by viewModel.videos.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val isCurrentUser = userId == null || userId == FirebaseAuth.getInstance().currentUser?.uid
     
     var showEditDialog by remember { mutableStateOf(false) }
     var tempBio by remember { mutableStateOf("") }
@@ -63,7 +71,7 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Profile Header with sign out button
+            // Profile Header with back button or sign out button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -71,13 +79,31 @@ fun ProfileScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Back button for other users' profiles
+                if (!isCurrentUser) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
                 // Profile Picture
                 Box(
                     modifier = Modifier
                         .size(80.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { imagePicker.launch("image/*") },
+                        .then(if (isCurrentUser) {
+                            Modifier.clickable { imagePicker.launch("image/*") }
+                        } else {
+                            Modifier
+                        }),
                     contentAlignment = Alignment.Center
                 ) {
                     if (user?.profilePictureUrl != null) {
@@ -119,33 +145,35 @@ fun ProfileScreen(
                     )
                 }
 
-                // Edit and Sign Out buttons
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Edit Button
-                    IconButton(
-                        onClick = {
-                            showEditDialog = true
-                            tempBio = user?.bio ?: ""
-                        }
+                // Edit and Sign Out buttons (only show for current user)
+                if (isCurrentUser) {
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
-                    }
-                    
-                    // Sign Out Button
-                    IconButton(
-                        onClick = {
-                            FirebaseAuth.getInstance().signOut()
-                            onNavigateToAuth()
+                        // Edit Button
+                        IconButton(
+                            onClick = {
+                                showEditDialog = true
+                                tempBio = user?.bio ?: ""
+                            }
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
                         }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ExitToApp,
-                            contentDescription = "Sign Out",
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                        
+                        // Sign Out Button
+                        IconButton(
+                            onClick = {
+                                FirebaseAuth.getInstance().signOut()
+                                onNavigateToAuth()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ExitToApp,
+                                contentDescription = "Sign Out",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }

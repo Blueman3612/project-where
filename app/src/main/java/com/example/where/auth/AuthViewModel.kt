@@ -215,4 +215,15 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
+
+    fun generateTestUsers(count: Int = 50) {
+        viewModelScope.launch {
+            try {
+                userRepository.generateTestUsers(count)
+            } catch (e: Exception) {
+                error = "Failed to generate test users: ${e.message}"
+                Log.e("AuthViewModel", "Error generating test users", e)
+            }
+        }
+    }
 } 

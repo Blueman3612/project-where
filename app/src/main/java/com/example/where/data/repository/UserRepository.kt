@@ -11,6 +11,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
+import java.util.UUID
 
 private const val TAG = "UserRepository"
 
@@ -128,6 +130,121 @@ class UserRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error checking username availability: ${e.message}")
             false
+        }
+    }
+
+    suspend fun generateTestUsers(count: Int = 50) {
+        val firstNames = listOf(
+            "James", "Emma", "Liam", "Olivia", "Noah", "Ava", "Oliver", "Isabella",
+            "William", "Sophia", "Elijah", "Mia", "Lucas", "Charlotte", "Mason",
+            "Amelia", "Logan", "Harper", "Sebastian", "Evelyn"
+        )
+        
+        val lastNames = listOf(
+            "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller",
+            "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez",
+            "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin"
+        )
+
+        val usernameSuffixes = listOf(
+            "gaming", "official", "real", "tv", "live", "original", "thereal",
+            "", "", "", "" // Empty strings to make some usernames without suffixes
+        )
+
+        val usernamePrefixes = listOf(
+            "the", "its", "im", "just", "mr", "ms", "dr",
+            "", "", "", "" // Empty strings to make some usernames without prefixes
+        )
+
+        val bios = listOf(
+            "Adventure seeker 🌎",
+            "Living life one video at a time 📱",
+            "Creating memories 📸",
+            "Exploring the world ✈️",
+            "Sharing my journey 🌟",
+            "Making content that matters 🎥",
+            "Travel enthusiast 🗺️",
+            "Content creator 🎬",
+            "Storyteller 📖",
+            "Digital nomad 🌍"
+        )
+
+        try {
+            repeat(count) {
+                val firstName = firstNames.random()
+                val lastName = lastNames.random()
+                val prefix = usernamePrefixes.random()
+                val suffix = usernameSuffixes.random()
+                
+                // Create username variations
+                val username = buildString {
+                    if (prefix.isNotEmpty()) append(prefix)
+                    append(firstName.lowercase())
+                    if (Random.nextBoolean()) append(Random.nextInt(10, 99))
+                    if (suffix.isNotEmpty()) append("_$suffix")
+                }
+                
+                // Create unique email
+                val email = "${firstName.lowercase()}.${lastName.lowercase()}${Random.nextInt(100, 999)}@example.com"
+                
+                val user = User(
+                    id = UUID.randomUUID().toString(),
+                    email = email,
+                    username = username,
+                    bio = bios.random(),
+                    createdAt = System.currentTimeMillis() - Random.nextLong(0, 30L * 24 * 60 * 60 * 1000) // Random date within last 30 days
+                )
+
+                // Check if username is available before creating
+                if (checkUsernameAvailable(username)) {
+                    usersCollection.document(user.id).set(user.toMap()).await()
+                    Log.d(TAG, "Created test user: $username")
+                } else {
+                    Log.d(TAG, "Skipped duplicate username: $username")
+                }
+            }
+            Log.d(TAG, "Finished generating test users")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating test users: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun searchUsers(query: String, limit: Int = 20): List<User> {
+        return try {
+            // Search by username first
+            val usernameResults = usersCollection
+                .orderBy("username")
+                .startAt(query.lowercase())
+                .endAt(query.lowercase() + '\uf8ff')
+                .limit(limit.toLong())
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc -> doc.data?.let { User.fromMap(it) } }
+
+            // If we have enough results from username search, return them
+            if (usernameResults.size >= limit) {
+                return usernameResults
+            }
+
+            // Otherwise, also search by email
+            val remainingLimit = limit - usernameResults.size
+            val emailResults = usersCollection
+                .orderBy("email")
+                .startAt(query.lowercase())
+                .endAt(query.lowercase() + '\uf8ff')
+                .limit(remainingLimit.toLong())
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc -> doc.data?.let { User.fromMap(it) } }
+                .filter { user -> !usernameResults.any { it.id == user.id } } // Remove duplicates
+
+            usernameResults + emailResults
+        } catch (e: Exception) {
+            Log.e(TAG, "Error searching users: ${e.message}")
+            emptyList()
         }
     }
 } 
