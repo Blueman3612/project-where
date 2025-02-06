@@ -186,20 +186,25 @@ fun MainScreen(
     // Handle current video changes
     LaunchedEffect(viewModel.currentVideo) {
         viewModel.currentVideo?.let { video ->
+            // First detach the player
+            currentPlayerView.value?.get()?.player = null
+            
+            // Then update the current player
             currentPlayer.apply {
                 stop()
                 clearMediaItems()
                 setMediaItem(MediaItem.fromUri(video.url))
                 prepare()
                 playWhenReady = true
-                play()
             }
-            // Force PlayerView to refresh its surface
+            
+            // Finally reattach the player and force a surface refresh
             currentPlayerView.value?.get()?.apply {
                 hideController()
                 setKeepContentOnPlayerReset(true)
-                player = null
+                setShutterBackgroundColor(AndroidColor.BLACK)
                 player = currentPlayer
+                player?.play()
             }
         }
     }
@@ -220,6 +225,11 @@ fun MainScreen(
         currentPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
+                    // Detach player before switch
+                    currentPlayerView.value?.get()?.apply {
+                        player = null
+                        setShutterBackgroundColor(AndroidColor.BLACK)
+                    }
                     viewModel.switchToNextVideo()
                 }
             }
@@ -299,7 +309,11 @@ fun MainScreen(
                             onDragStart = { isSwipeInProgress = true },
                             onDragEnd = {
                                 if (swipeOffset < -200 && showActualLocation) {  // Threshold for swipe
-                                    currentPlayerView.value?.get()?.player = null  // Detach player before switch
+                                    // Detach player before switch
+                                    currentPlayerView.value?.get()?.apply {
+                                        player = null
+                                        setShutterBackgroundColor(AndroidColor.BLACK)
+                                    }
                                     viewModel.switchToNextVideo()
                                     showActualLocation = false
                                     selectedLocation = null
@@ -328,18 +342,25 @@ fun MainScreen(
                     AndroidView(
                         factory = { context ->
                             PlayerView(context).apply {
-                                player = currentPlayer
                                 layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
                                 useController = false
                                 setKeepContentOnPlayerReset(true)
                                 setShutterBackgroundColor(AndroidColor.BLACK)
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                                 setKeepScreenOn(true)
+                                // Set player after configuration
+                                player = currentPlayer
                             }.also { playerView ->
                                 currentPlayerView.value = WeakReference(playerView)
                             }
                         },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        update = { playerView ->
+                            // Ensure player is attached during updates
+                            if (playerView.player == null) {
+                                playerView.player = currentPlayer
+                            }
+                        }
                     )
                 }
 
@@ -424,13 +445,35 @@ fun MainScreen(
                         Icon(Icons.Default.Person, "Profile", tint = Color.White)
                     }
 
-                    IconButton(
-                        onClick = { /* Handle like */ },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(Icons.Default.Favorite, "Like", tint = Color.White)
+                        IconButton(
+                            onClick = { viewModel.toggleLike() },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = "Like",
+                                tint = if (viewModel.isLiked) Color.Red else Color.White
+                            )
+                        }
+                        
+                        // Likes count with formatted number
+                        Text(
+                            text = viewModel.formatNumber(viewModel.currentVideo?.likes ?: 0),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White,
+                            modifier = Modifier
+                                .background(
+                                    color = Color.Black.copy(alpha = 0.5f),
+                                    shape = CircleShape
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
                     }
                 }
             }

@@ -29,6 +29,7 @@ class VideoRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val videosCollection = firestore.collection("videos")
+    private val userLikesCollection = firestore.collection("userLikes")
     
     fun getVideosFlow(): Flow<List<Video>> = flow {
         try {
@@ -245,6 +246,117 @@ class VideoRepository @Inject constructor(
             return snapshot.count.toInt()
         } catch (e: Exception) {
             Log.e(TAG, "Error getting user upload count: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun addRandomLikesToExistingVideos() {
+        try {
+            Log.d(TAG, "Starting to add random likes to videos...")
+            val snapshot = videosCollection.get().await()
+            Log.d(TAG, "Found ${snapshot.documents.size} videos to update")
+            
+            snapshot.documents.forEach { doc ->
+                val currentData = doc.data
+                if (currentData != null) {
+                    // Only update if likes field doesn't exist or is 0
+                    if (currentData["likes"] == null || (currentData["likes"] as? Number)?.toInt() == 0) {
+                        val randomLikes = (1..1000).random()
+                        Log.d(TAG, "Adding $randomLikes likes to video ${doc.id}")
+                        
+                        videosCollection.document(doc.id)
+                            .update("likes", randomLikes)
+                            .await()
+                    }
+                }
+            }
+            
+            Log.d(TAG, "Successfully added random likes to all videos")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error adding random likes to videos: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun toggleLike(videoId: String, userId: String): Boolean {
+        try {
+            // Get user's likes document
+            val userLikesDoc = userLikesCollection.document(userId)
+            val userLikesSnapshot = userLikesDoc.get().await()
+            
+            // Get current liked videos
+            @Suppress("UNCHECKED_CAST")
+            val currentLikedVideos = if (userLikesSnapshot.exists()) {
+                (userLikesSnapshot.data?.get("likedVideos") as? List<String>) ?: listOf()
+            } else {
+                listOf()
+            }
+
+            // Toggle like
+            val isLiked = currentLikedVideos.contains(videoId)
+            val newLikedVideos = if (isLiked) {
+                currentLikedVideos - videoId
+            } else {
+                currentLikedVideos + videoId
+            }
+
+            // Update user's likes
+            userLikesDoc.set(
+                mapOf(
+                    "userId" to userId,
+                    "likedVideos" to newLikedVideos
+                )
+            ).await()
+
+            // Update video's like count
+            val videoDoc = videosCollection.document(videoId)
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(videoDoc)
+                val currentLikes = (snapshot.data?.get("likes") as? Number)?.toInt() ?: 0
+                val newLikes = if (isLiked) currentLikes - 1 else currentLikes + 1
+                transaction.update(videoDoc, "likes", newLikes)
+            }.await()
+
+            return !isLiked // Return new like state
+        } catch (e: Exception) {
+            Log.e(TAG, "Error toggling like: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun isVideoLiked(videoId: String, userId: String): Boolean {
+        try {
+            val userLikesDoc = userLikesCollection.document(userId).get().await()
+            if (!userLikesDoc.exists()) return false
+            
+            @Suppress("UNCHECKED_CAST")
+            val likedVideos = (userLikesDoc.data?.get("likedVideos") as? List<String>) ?: listOf()
+            return likedVideos.contains(videoId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking if video is liked: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun getUserLikedVideos(userId: String): List<Video> {
+        try {
+            val userLikesDoc = userLikesCollection.document(userId).get().await()
+            if (!userLikesDoc.exists()) return emptyList()
+            
+            @Suppress("UNCHECKED_CAST")
+            val likedVideoIds = (userLikesDoc.data?.get("likedVideos") as? List<String>) ?: listOf()
+            if (likedVideoIds.isEmpty()) return emptyList()
+            
+            val videos = videosCollection
+                .whereIn(FieldPath.documentId(), likedVideoIds)
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+            
+            return videos
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting user liked videos: ${e.message}")
             throw e
         }
     }

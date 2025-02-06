@@ -15,6 +15,7 @@ data class Video(
     val description: String?,
     val authorId: String,
     val source: VideoSource,
+    val likes: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun toMap(): Map<String, Any> = mapOf(
@@ -29,6 +30,7 @@ data class Video(
         "description" to (description ?: ""),
         "authorId" to authorId,
         "source" to source.name,
+        "likes" to likes,
         "createdAt" to createdAt
     )
 
@@ -84,6 +86,7 @@ data class Video(
                         Log.e(TAG, "Invalid source value: $sourceStr")
                         VideoSource.PEXELS // Default to PEXELS if invalid
                     },
+                    likes = (map["likes"] as? Number)?.toInt() ?: 0,
                     createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
                 )
             } catch (e: Exception) {

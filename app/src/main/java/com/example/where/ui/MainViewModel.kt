@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.where.data.model.Video
 import com.example.where.data.repository.VideoRepository
 import com.google.android.gms.maps.model.LatLng
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -17,7 +18,8 @@ import kotlin.math.*
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val videoRepository: VideoRepository
+    private val videoRepository: VideoRepository,
+    private val auth: FirebaseAuth
 ) : ViewModel() {
 
     private var _currentVideo = mutableStateOf<Video?>(null)
@@ -41,9 +43,14 @@ class MainViewModel @Inject constructor(
     var lastGuessDistance by mutableStateOf<Double?>(null)
         private set
 
+    private var _isLiked = mutableStateOf(false)
+    val isLiked: Boolean get() = _isLiked.value
+
     init {
         viewModelScope.launch {
             loadNextVideo()
+            // Initialize random likes for all videos
+            initializeRandomLikes()
         }
     }
 
@@ -56,6 +63,12 @@ class MainViewModel @Inject constructor(
             } else {
                 _nextVideo.value = video
             }
+            // Check if current user has liked this video
+            video?.let { 
+                auth.currentUser?.uid?.let { userId ->
+                    _isLiked.value = videoRepository.isVideoLiked(it.id, userId)
+                }
+            }
         } catch (e: Exception) {
             Log.e("MainViewModel", "Error loading video: ${e.message}")
         } finally {
@@ -65,9 +78,20 @@ class MainViewModel @Inject constructor(
 
     fun switchToNextVideo() {
         viewModelScope.launch {
-            _currentVideo.value = _nextVideo.value
+            // Store the next video temporarily
+            val nextVideo = _nextVideo.value
+            // Set the current video directly to next video
+            _currentVideo.value = nextVideo
+            // Clear only the next video
             _nextVideo.value = null
+            // Load the next video
             loadNextVideo()
+            // Reset like state for new video
+            nextVideo?.let { video ->
+                auth.currentUser?.uid?.let { userId ->
+                    _isLiked.value = videoRepository.isVideoLiked(video.id, userId)
+                }
+            }
         }
     }
 
@@ -143,6 +167,46 @@ class MainViewModel @Inject constructor(
             distance < 0.1 -> String.format("%.0f feet", distance * 5280) // Show feet for very close guesses
             distance < 10 -> String.format("%.2f miles", distance) // Show 2 decimal places for close guesses
             else -> String.format("%.1f miles", distance) // Show 1 decimal place for far guesses
+        }
+    }
+
+    fun initializeRandomLikes() {
+        viewModelScope.launch {
+            try {
+                videoRepository.addRandomLikesToExistingVideos()
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error initializing random likes: ${e.message}")
+                error = "Failed to initialize likes"
+            }
+        }
+    }
+
+    // Format numbers (e.g., 1000 -> 1K)
+    fun formatNumber(number: Int): String {
+        return when {
+            number >= 1_000_000 -> String.format("%.1fM", number / 1_000_000.0)
+            number >= 1_000 -> String.format("%.1fK", number / 1_000.0)
+            else -> number.toString()
+        }
+    }
+
+    fun toggleLike() {
+        viewModelScope.launch {
+            try {
+                currentVideo?.let { video ->
+                    auth.currentUser?.uid?.let { userId ->
+                        val newLikeState = videoRepository.toggleLike(video.id, userId)
+                        _isLiked.value = newLikeState
+                        // Update the current video's like count
+                        _currentVideo.value = video.copy(
+                            likes = video.likes + (if (newLikeState) 1 else -1)
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error toggling like: ${e.message}")
+                error = "Failed to update like"
+            }
         }
     }
 } 
