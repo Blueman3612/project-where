@@ -187,9 +187,19 @@ fun MainScreen(
     LaunchedEffect(viewModel.currentVideo) {
         viewModel.currentVideo?.let { video ->
             currentPlayer.apply {
+                stop()
+                clearMediaItems()
                 setMediaItem(MediaItem.fromUri(video.url))
                 prepare()
                 playWhenReady = true
+                play()
+            }
+            // Force PlayerView to refresh its surface
+            currentPlayerView.value?.get()?.apply {
+                hideController()
+                setKeepContentOnPlayerReset(true)
+                player = null
+                player = currentPlayer
             }
         }
     }
@@ -244,6 +254,16 @@ fun MainScreen(
         }
     }
 
+    // Add a new effect to handle playback state after swipe
+    LaunchedEffect(showActualLocation) {
+        if (!showActualLocation) { // This means we've just switched to a new video
+            currentPlayer.apply {
+                playWhenReady = true
+                play()
+            }
+        }
+    }
+
     // Function to calculate bounds that include both points
     fun calculateBounds(point1: LatLng, point2: LatLng): Pair<LatLngBounds, Float> {
         val builder = LatLngBounds.builder()
@@ -279,6 +299,7 @@ fun MainScreen(
                             onDragStart = { isSwipeInProgress = true },
                             onDragEnd = {
                                 if (swipeOffset < -200 && showActualLocation) {  // Threshold for swipe
+                                    currentPlayerView.value?.get()?.player = null  // Detach player before switch
                                     viewModel.switchToNextVideo()
                                     showActualLocation = false
                                     selectedLocation = null

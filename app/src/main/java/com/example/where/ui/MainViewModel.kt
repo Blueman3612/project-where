@@ -96,23 +96,21 @@ class MainViewModel @Inject constructor(
     private fun calculateScore(distanceMiles: Double): Int {
         return when {
             distanceMiles <= 0.0189394 -> 5000 // Full score for within 100 feet (≈ 0.0189394 miles)
-            distanceMiles <= 50.0 -> {
-                // Steeper linear dropoff for first 50 miles
-                // 5000 -> 4000 points over 50 miles
-                val initialDropoff = 5000 - (1000.0 * (distanceMiles / 50.0))
-                initialDropoff.toInt()
-            }
+            distanceMiles >= 3000.0 -> 0 // No points for guesses over 3000 miles
             else -> {
-                // Gentler exponential dropoff after 50 miles
-                // Starting at 4000 points at 50 miles
-                // k chosen to give:
-                // 500 miles -> ~3000 points
-                // 1000 miles -> ~2000 points
-                // 2000 miles -> ~1000 points
-                // 3000 miles -> ~500 points
-                val k = 0.0004
-                val baseScore = 4000.0 * exp(-k * (distanceMiles - 50.0))
-                baseScore.toInt().coerceAtLeast(100) // Minimum score of 100
+                // Using exponential decay function: a * e^(-bx) + c
+                // Parameters tuned to match the required points:
+                // 50 miles -> 4000 points
+                // 200 miles -> 3000 points
+                // 500 miles -> 2000 points
+                // 1000 miles -> 1000 points
+                // 2000 miles -> 500 points
+                val a = 4100.0  // Initial amplitude
+                val b = 0.0018  // Decay rate
+                val c = 400.0   // Vertical shift
+
+                (a * Math.exp(-b * distanceMiles) + c).toInt()
+                    .coerceIn(0, 5000) // Ensure score stays within bounds
             }
         }
     }
