@@ -97,33 +97,33 @@ fun MainScreen(
     val currentPlayerView = remember { mutableStateOf<WeakReference<PlayerView>?>(null) }
     
     fun createOptimizedPlayer() = ExoPlayer.Builder(context)
-        .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
-        .setLoadControl(
-            DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                    DefaultLoadControl.DEFAULT_MIN_BUFFER_MS / 2,
-                    DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 2,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 2,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 2
-                )
-                .setPrioritizeTimeOverSizeThresholds(true)
-                .build()
-        )
-        .setMediaSourceFactory(
-            DefaultMediaSourceFactory(context)
-                .setDataSourceFactory(
-                    DefaultHttpDataSource.Factory()
-                        .setUserAgent("Mozilla/5.0")
-                        .setConnectTimeoutMs(8000)
-                        .setReadTimeoutMs(8000)
-                        .setAllowCrossProtocolRedirects(true)
-                )
-        )
-        .build().apply {
-            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
-            repeatMode = Player.REPEAT_MODE_ONE
-            volume = 0f
-            playWhenReady = false
+            .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS / 2,
+                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 2,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 2,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 2
+                    )
+                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .build()
+            )
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(context)
+                    .setDataSourceFactory(
+                        DefaultHttpDataSource.Factory()
+                            .setUserAgent("Mozilla/5.0")
+                            .setConnectTimeoutMs(8000)
+                            .setReadTimeoutMs(8000)
+                            .setAllowCrossProtocolRedirects(true)
+                    )
+            )
+            .build().apply {
+                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+                repeatMode = Player.REPEAT_MODE_ONE
+                volume = 0f
+                playWhenReady = false
         }
 
     val currentPlayer = remember { 
@@ -191,12 +191,12 @@ fun MainScreen(
             
             // Then update the current player
             currentPlayer.apply {
-                stop()
-                clearMediaItems()
-                setMediaItem(MediaItem.fromUri(video.url))
-                prepare()
-                playWhenReady = true
-            }
+                    stop()
+                    clearMediaItems()
+                    setMediaItem(MediaItem.fromUri(video.url))
+                    prepare()
+                    playWhenReady = true
+                }
             
             // Finally reattach the player and force a surface refresh
             currentPlayerView.value?.get()?.apply {
@@ -449,12 +449,12 @@ fun MainScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        IconButton(
+                    IconButton(
                             onClick = { viewModel.toggleLike() },
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
-                        ) {
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                    ) {
                             Icon(
                                 imageVector = Icons.Default.Favorite,
                                 contentDescription = "Like",
@@ -505,7 +505,7 @@ fun MainScreen(
                     cameraPositionState = cameraPositionState,
                     onMapClick = { latLng ->
                         if (!showActualLocation && !isSwipeInProgress) {
-                            selectedLocation = latLng
+                        selectedLocation = latLng
                         }
                     }
                 ) {
@@ -550,20 +550,20 @@ fun MainScreen(
 
                 // Submit Guess Button (only show if not showing result)
                 if (!showActualLocation) {
-                    Button(
-                        onClick = { 
-                            selectedLocation?.let { location ->
-                                viewModel.submitGuess(location)
+                Button(
+                    onClick = { 
+                        selectedLocation?.let { location ->
+                            viewModel.submitGuess(location)
                                 showActualLocation = true
                                 hasGuessedCurrentVideo = true
-                            }
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(16.dp),
-                        enabled = selectedLocation != null
-                    ) {
-                        Text("Submit Guess")
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp),
+                    enabled = selectedLocation != null
+                ) {
+                    Text("Submit Guess")
                     }
                 }
             }

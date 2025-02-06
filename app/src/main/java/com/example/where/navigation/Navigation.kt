@@ -13,6 +13,10 @@ sealed class Screen(val route: String) {
     object Main : Screen("main")
     object Profile : Screen("profile")
     object Upload : Screen("upload")
+    object Video : Screen("video/{videoId}") {
+        fun createRoute(videoId: String) = "video/$videoId"
+    }
+    object Auth : Screen("auth")
 }
 
 @Composable
@@ -34,11 +38,11 @@ fun AppNavigation(
         
         composable(Screen.Profile.route) {
             ProfileScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
+                onNavigateToVideo = { videoId ->
+                    navController.navigate(Screen.Video.createRoute(videoId))
                 },
-                onUploadClick = {
-                    navController.navigate(Screen.Upload.route)
+                onNavigateToAuth = {
+                    navController.navigate(Screen.Auth.route)
                 }
             )
         }

@@ -13,8 +13,8 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageMetadata
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -581,19 +581,43 @@ class VideoRepository @Inject constructor(
         }
     }
 
-    suspend fun getUserVideos(userId: String): List<Video> {
+    fun getUserVideos(userId: String): Flow<List<Video>> = callbackFlow {
         try {
+            // Initial emission
             val snapshot = videosCollection
                 .whereEqualTo("authorId", userId)
                 .get()
                 .await()
             
-            return snapshot.documents.mapNotNull { doc -> 
+            send(snapshot.documents.mapNotNull { doc -> 
                 doc.data?.let { Video.fromMap(it) }
+            })
+            
+            // Listen for real-time updates
+            val registration = videosCollection
+                .whereEqualTo("authorId", userId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e(TAG, "Error listening to user videos: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    
+                    snapshot?.let { validSnapshot ->
+                        val videos = validSnapshot.documents.mapNotNull { doc ->
+                            doc.data?.let { Video.fromMap(it) }
+                        }
+                        trySend(videos)
+                    }
+                }
+            
+            // Clean up the listener when the flow is cancelled
+            awaitClose {
+                registration.remove()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting user videos: ${e.message}")
-            throw e
+            send(emptyList())
+            close(e)
         }
     }
 
