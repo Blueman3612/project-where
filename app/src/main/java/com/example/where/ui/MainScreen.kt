@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -38,6 +37,32 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import android.graphics.Color as AndroidColor
+import android.util.Log
+import java.lang.ref.WeakReference
+
+private const val TAG = "MainScreen"
+
+// Memory tracking helper
+private object MemoryTracker {
+    private var lastUsedMemory = 0L
+    private const val MB = 1024 * 1024
+
+    fun logMemoryUsage(tag: String) {
+        val runtime = Runtime.getRuntime()
+        val usedMemory = (runtime.totalMemory() - runtime.freeMemory()) / MB
+        val delta = usedMemory - lastUsedMemory
+        
+        val deltaPrefix = if (delta >= 0) "+" else ""
+        
+        Log.d(TAG, "Memory Usage [$tag] - Used: ${usedMemory}MB (Δ: $deltaPrefix${delta}MB)")
+        Log.d(TAG, "Memory Details [$tag]:")
+        Log.d(TAG, "- Total: ${runtime.totalMemory() / MB}MB")
+        Log.d(TAG, "- Free: ${runtime.freeMemory() / MB}MB")
+        Log.d(TAG, "- Max: ${runtime.maxMemory() / MB}MB")
+        
+        lastUsedMemory = usedMemory
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,22 +72,29 @@ fun MainScreen(
 ) {
     var selectedLocation by remember { mutableStateOf<LatLng?>(null) }
     var totalHeight by remember { mutableStateOf(0f) }
-    var mapHeight by remember { mutableStateOf(0.4f) } // 40% of screen height initially
+    var mapHeight by remember { mutableStateOf(0.4f) }
     val density = LocalDensity.current
     
-    // ExoPlayer setup
+    // Track composition memory usage
+    SideEffect {
+        MemoryTracker.logMemoryUsage("Composition")
+    }
+    
+    // ExoPlayer setup with memory tracking
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val playerRef = remember { mutableStateOf<ExoPlayer?>(null) }
     val exoPlayer = remember { 
+        MemoryTracker.logMemoryUsage("ExoPlayer Creation")
         ExoPlayer.Builder(context)
             .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
-                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
-                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                        DefaultLoadControl.DEFAULT_MIN_BUFFER_MS / 2,
+                        DefaultLoadControl.DEFAULT_MAX_BUFFER_MS / 2,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 2,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 2
                     )
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build()
@@ -71,67 +103,102 @@ fun MainScreen(
                 DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(
                         DefaultHttpDataSource.Factory()
-                            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-                            .setConnectTimeoutMs(DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS)
-                            .setReadTimeoutMs(DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS)
+                            .setUserAgent("Mozilla/5.0")
+                            .setConnectTimeoutMs(8000)
+                            .setReadTimeoutMs(8000)
                             .setAllowCrossProtocolRedirects(true)
                     )
             )
             .build().apply {
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
-                repeatMode = Player.REPEAT_MODE_ALL
+                repeatMode = Player.REPEAT_MODE_ONE
                 volume = 0f
-                playWhenReady = true
+                playWhenReady = false
+            }.also {
+                playerRef.value?.release()
+                playerRef.value = it
             }
     }
 
-    // Update video when currentVideo changes
-    LaunchedEffect(viewModel.currentVideo) {
-        viewModel.currentVideo?.let { video ->
-            exoPlayer.apply {
-                setMediaItem(MediaItem.fromUri(video.url))
-                prepare()
-                playWhenReady = true
-                play()
-            }
-            selectedLocation = null // Reset selected location for new video
-        }
-    }
-
-    // Handle lifecycle events
+    // Single DisposableEffect to handle all cleanup
     DisposableEffect(lifecycleOwner) {
+        var playerView by mutableStateOf<PlayerView?>(null)
+        
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
+                    Log.d(TAG, "Lifecycle: ON_PAUSE")
+                    MemoryTracker.logMemoryUsage("ON_PAUSE")
                     exoPlayer.pause()
                 }
                 Lifecycle.Event.ON_RESUME -> {
+                    Log.d(TAG, "Lifecycle: ON_RESUME")
+                    MemoryTracker.logMemoryUsage("ON_RESUME")
                     if (viewModel.currentVideo != null) {
+                        exoPlayer.prepare()
                         exoPlayer.play()
                     }
                 }
                 Lifecycle.Event.ON_STOP -> {
+                    Log.d(TAG, "Lifecycle: ON_STOP")
+                    MemoryTracker.logMemoryUsage("ON_STOP")
                     exoPlayer.stop()
                     exoPlayer.clearMediaItems()
+                }
+                Lifecycle.Event.ON_DESTROY -> {
+                    Log.d(TAG, "Lifecycle: ON_DESTROY")
+                    MemoryTracker.logMemoryUsage("ON_DESTROY")
                 }
                 else -> {}
             }
         }
+
         lifecycleOwner.lifecycle.addObserver(observer)
+
         onDispose {
+            Log.d(TAG, "DisposableEffect: Cleaning up resources")
+            MemoryTracker.logMemoryUsage("Before Cleanup")
+            
             lifecycleOwner.lifecycle.removeObserver(observer)
+            playerView?.player = null
+            playerView = null
+            
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
             exoPlayer.release()
+            playerRef.value = null
+            
+            MemoryTracker.logMemoryUsage("After Cleanup")
+            System.gc()
         }
     }
 
-    // Handle navigation events
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayer.stop()
-            exoPlayer.clearMediaItems()
+    // Update video when currentVideo changes
+    LaunchedEffect(viewModel.currentVideo) {
+        try {
+            Log.d(TAG, "Loading new video")
+            MemoryTracker.logMemoryUsage("Before Video Load")
+            
+            viewModel.currentVideo?.let { video ->
+                exoPlayer.apply {
+                    stop()
+                    clearMediaItems()
+                    setMediaItem(MediaItem.fromUri(video.url))
+                    prepare()
+                    playWhenReady = true
+                }
+                selectedLocation = null
+            } ?: run {
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+            }
+            
+            MemoryTracker.logMemoryUsage("After Video Load")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading video", e)
         }
     }
-    
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Video Player Section
@@ -152,9 +219,9 @@ fun MainScreen(
                             PlayerView(context).apply {
                                 player = exoPlayer
                                 layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-                                useController = true
+                                useController = false // Disable default controller
                                 setKeepContentOnPlayerReset(true)
-                                setShutterBackgroundColor(AndroidColor.BLACK)  // Using Android's Color
+                                setShutterBackgroundColor(AndroidColor.BLACK)
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                                 setKeepScreenOn(true)
                             }
