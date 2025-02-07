@@ -51,6 +51,9 @@ fun ProfileScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val isCurrentUser = userId == null || userId == FirebaseAuth.getInstance().currentUser?.uid
+    val isFollowing by viewModel.isFollowing.collectAsState()
+    val followerCount by viewModel.followerCount.collectAsState()
+    val followingCount by viewModel.followingCount.collectAsState()
     
     var showEditDialog by remember { mutableStateOf(false) }
     var tempBio by remember { mutableStateOf("") }
@@ -136,11 +139,11 @@ fun ProfileScreen(
                         label = "Videos"
                     )
                     StatColumn(
-                        value = "0",  // Placeholder for followers
+                        value = followerCount.toString(),
                         label = "Followers"
                     )
                     StatColumn(
-                        value = "0",  // Placeholder for following
+                        value = followingCount.toString(),
                         label = "Following"
                     )
                 }
@@ -174,6 +177,33 @@ fun ProfileScreen(
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
+                    }
+                }
+            }
+
+            // Stats Row with Follow Button
+            if (!isCurrentUser) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { viewModel.toggleFollow() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isFollowing) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
+                            contentColor = if (isFollowing) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary
+                        ),
+                        border = if (isFollowing) {
+                            ButtonDefaults.outlinedButtonBorder
+                        } else null
+                    ) {
+                        Text(if (isFollowing) "Following" else "Follow")
                     }
                 }
             }

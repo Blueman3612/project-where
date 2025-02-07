@@ -154,11 +154,21 @@ private fun UserCard(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = user.username,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = user.username,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "• ${formatFollowerCount(user.followerCount)} followers",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (user.bio.isNotBlank()) {
                     Text(
                         text = user.bio,
@@ -169,5 +179,13 @@ private fun UserCard(
                 }
             }
         }
+    }
+}
+
+private fun formatFollowerCount(count: Int): String {
+    return when {
+        count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+        else -> count.toString()
     }
 } 

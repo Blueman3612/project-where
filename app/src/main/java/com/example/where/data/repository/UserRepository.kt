@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.example.where.data.model.User
+import com.example.where.data.model.UserFollow
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
@@ -13,6 +14,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
 import java.util.UUID
+import com.google.firebase.firestore.AggregateSource
 
 private const val TAG = "UserRepository"
 
@@ -24,6 +26,7 @@ class UserRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val usersCollection = firestore.collection("users")
+    private val userFollowsCollection = firestore.collection("userFollows")
 
     suspend fun getUser(userId: String): User? {
         return try {
@@ -221,7 +224,23 @@ class UserRepository @Inject constructor(
                 .get()
                 .await()
                 .documents
-                .mapNotNull { doc -> doc.data?.let { User.fromMap(it) } }
+                .mapNotNull { doc -> 
+                    doc.data?.let { data ->
+                        // Get follower count for each user
+                        val followerCount = userFollowsCollection
+                            .whereEqualTo("followingId", doc.id)
+                            .count()
+                            .get(AggregateSource.SERVER)
+                            .await()
+                            .count
+                            .toInt()
+                        
+                        // Add follower count to user data
+                        val userData = data.toMutableMap()
+                        userData["followerCount"] = followerCount
+                        User.fromMap(userData)
+                    }
+                }
 
             // If we have enough results from username search, return them
             if (usernameResults.size >= limit) {
@@ -238,13 +257,106 @@ class UserRepository @Inject constructor(
                 .get()
                 .await()
                 .documents
-                .mapNotNull { doc -> doc.data?.let { User.fromMap(it) } }
+                .mapNotNull { doc -> 
+                    doc.data?.let { data ->
+                        // Get follower count for each user
+                        val followerCount = userFollowsCollection
+                            .whereEqualTo("followingId", doc.id)
+                            .count()
+                            .get(AggregateSource.SERVER)
+                            .await()
+                            .count
+                            .toInt()
+                        
+                        // Add follower count to user data
+                        val userData = data.toMutableMap()
+                        userData["followerCount"] = followerCount
+                        User.fromMap(userData)
+                    }
+                }
                 .filter { user -> !usernameResults.any { it.id == user.id } } // Remove duplicates
 
             usernameResults + emailResults
         } catch (e: Exception) {
             Log.e(TAG, "Error searching users: ${e.message}")
             emptyList()
+        }
+    }
+
+    suspend fun followUser(targetUserId: String): Boolean {
+        val currentUserId = auth.currentUser?.uid ?: return false
+        if (currentUserId == targetUserId) return false
+
+        return try {
+            // Create a unique ID for the follow relationship
+            val followId = "$currentUserId-$targetUserId"
+            
+            val follow = UserFollow(
+                followerId = currentUserId,
+                followingId = targetUserId
+            )
+            
+            userFollowsCollection.document(followId).set(follow.toMap()).await()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error following user: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun unfollowUser(targetUserId: String): Boolean {
+        val currentUserId = auth.currentUser?.uid ?: return false
+        
+        return try {
+            val followId = "$currentUserId-$targetUserId"
+            userFollowsCollection.document(followId).delete().await()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unfollowing user: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun isFollowing(targetUserId: String): Boolean {
+        val currentUserId = auth.currentUser?.uid ?: return false
+        
+        return try {
+            val followId = "$currentUserId-$targetUserId"
+            val doc = userFollowsCollection.document(followId).get().await()
+            doc.exists()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking follow status: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun getFollowerCount(userId: String): Int {
+        return try {
+            val snapshot = userFollowsCollection
+                .whereEqualTo("followingId", userId)
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+            
+            snapshot.count.toInt()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting follower count: ${e.message}")
+            0
+        }
+    }
+
+    suspend fun getFollowingCount(userId: String): Int {
+        return try {
+            val snapshot = userFollowsCollection
+                .whereEqualTo("followerId", userId)
+                .count()
+                .get(AggregateSource.SERVER)
+                .await()
+            
+            snapshot.count.toInt()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting following count: ${e.message}")
+            0
         }
     }
 } 

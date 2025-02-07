@@ -3,6 +3,7 @@ package com.example.where.navigation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -29,7 +30,7 @@ sealed class Screen(
     val title: String,
     val icon: ImageVector
 ) {
-    object Discover : Screen("discover", "Discover", Icons.Default.Explore)
+    object Home : Screen("home", "Home", Icons.Default.Home)
     object Compete : Screen("compete", "Compete", Icons.Default.EmojiEvents)
     object Create : Screen("create", "Create", Icons.Default.AddCircle)
     object Search : Screen("search", "Search", Icons.Default.Search)
@@ -49,10 +50,10 @@ sealed class Screen(
 @Composable
 fun AppNavigation(
     navController: NavHostController = rememberNavController(),
-    startDestination: String = Screen.Discover.route
+    startDestination: String = Screen.Home.route
 ) {
     val bottomNavItems = listOf(
-        Screen.Discover,
+        Screen.Home,
         Screen.Compete,
         Screen.Create,
         Screen.Search,
@@ -69,7 +70,8 @@ fun AppNavigation(
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
+                tonalElevation = 8.dp,
+                modifier = Modifier.height(56.dp) // Set fixed compact height
             ) {
                 bottomNavItems.forEach { screen ->
                     val selected = when (screen) {
@@ -82,13 +84,12 @@ fun AppNavigation(
                                 imageVector = screen.icon,
                                 contentDescription = screen.title,
                                 modifier = if (screen == Screen.Create) {
-                                    Modifier.size(32.dp)  // Larger icon for Create button
+                                    Modifier.size(28.dp)  // Slightly smaller than before but still prominent
                                 } else {
                                     Modifier.size(24.dp)
                                 }
                             )
                         },
-                        label = { Text(screen.title) },
                         selected = selected,
                         onClick = {
                             when (screen) {
@@ -119,10 +120,8 @@ fun AppNavigation(
                         },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
                             indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     )
                 }
@@ -134,7 +133,7 @@ fun AppNavigation(
         navController = navController,
         startDestination = startDestination
     ) {
-                composable(Screen.Discover.route) {
+                composable(Screen.Home.route) {
             MainScreen(
                         onNavigateToProfile = { userId ->
                             navController.navigate(Screen.UserProfile.createRoute(userId))

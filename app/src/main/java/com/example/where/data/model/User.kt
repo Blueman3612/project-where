@@ -6,7 +6,8 @@ data class User(
     val username: String,
     val bio: String = "",
     val profilePictureUrl: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val followerCount: Int = 0
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,
@@ -14,7 +15,8 @@ data class User(
         "username" to username,
         "bio" to bio,
         "profilePictureUrl" to profilePictureUrl,
-        "createdAt" to createdAt
+        "createdAt" to createdAt,
+        "followerCount" to followerCount
     ).filterValues { it != null }
 
     companion object {
@@ -26,7 +28,8 @@ data class User(
                     username = map["username"] as String,
                     bio = (map["bio"] as? String) ?: "",
                     profilePictureUrl = map["profilePictureUrl"] as? String,
-                    createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                    createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+                    followerCount = (map["followerCount"] as? Number)?.toInt() ?: 0
                 )
             } catch (e: Exception) {
                 null
