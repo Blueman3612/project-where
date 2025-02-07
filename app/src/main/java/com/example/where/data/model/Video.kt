@@ -14,6 +14,7 @@ data class Video(
     val title: String?,
     val description: String?,
     val authorId: String,
+    val authorUsername: String,
     val source: VideoSource,
     val likes: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
@@ -29,6 +30,7 @@ data class Video(
         "title" to (title ?: ""),
         "description" to (description ?: ""),
         "authorId" to authorId,
+        "authorUsername" to authorUsername,
         "source" to source.name,
         "likes" to likes,
         "createdAt" to createdAt
@@ -72,6 +74,9 @@ data class Video(
                     Log.e(TAG, "Missing required field: source") 
                 }
                 
+                // Use authorId as fallback for authorUsername
+                val authorUsername = map["authorUsername"] as? String ?: authorId
+                
                 return Video(
                     id = id,
                     url = url,
@@ -80,6 +85,7 @@ data class Video(
                     title = map["title"] as? String,
                     description = map["description"] as? String,
                     authorId = authorId,
+                    authorUsername = authorUsername,
                     source = try {
                         VideoSource.valueOf(sourceStr)
                     } catch (e: IllegalArgumentException) {

@@ -3,17 +3,21 @@ package com.example.where.ui
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -76,7 +80,8 @@ private object MemoryTracker {
 @Composable
 fun MainScreen(
     viewModel: MainViewModel = hiltViewModel(),
-    onProfileClick: () -> Unit = {}
+    onProfileClick: () -> Unit = {},
+    onNavigateToProfile: (String) -> Unit = {}
 ) {
     var selectedLocation by remember { mutableStateOf<LatLng?>(null) }
     var totalHeight by remember { mutableStateOf(0f) }
@@ -251,6 +256,14 @@ fun MainScreen(
     // Track if we've made a guess on the current video
     var hasGuessedCurrentVideo by remember { mutableStateOf(false) }
 
+    // Add these state variables at the top of MainScreen composable
+    var showOverlay by remember { mutableStateOf(true) }
+    var lastDragDirection by remember { mutableStateOf(0f) }
+    val offsetY by animateFloatAsState(
+        targetValue = if (showOverlay) 0f else -400f,
+        animationSpec = tween(300, easing = FastOutSlowInEasing)
+    )
+
     // Effect to handle screen disposal and returns
     DisposableEffect(Unit) {
         onDispose {
@@ -305,10 +318,26 @@ fun MainScreen(
                     .background(Color.Black)
                     .offset { IntOffset(swipeOffset.roundToInt(), 0) }
                     .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                // Use the last drag direction to determine overlay state
+                                if (kotlin.math.abs(lastDragDirection) > 5) {
+                                    showOverlay = lastDragDirection > 0
+                                }
+                            }
+                        ) { _, dragAmount ->
+                            // Store the drag direction and update overlay
+                            lastDragDirection = dragAmount
+                            if (kotlin.math.abs(dragAmount) > 5) {
+                                showOverlay = dragAmount > 0
+                            }
+                        }
+                    }
+                    .pointerInput(Unit) {
                         detectHorizontalDragGestures(
                             onDragStart = { isSwipeInProgress = true },
                             onDragEnd = {
-                                if (swipeOffset < -200 && showActualLocation) {  // Threshold for swipe
+                                if (swipeOffset < -400 && showActualLocation) {  // Threshold for swipe
                                     // Detach player before switch
                                     currentPlayerView.value?.get()?.apply {
                                         player = null
@@ -364,7 +393,154 @@ fun MainScreen(
                     )
                 }
 
-                // Score Display overlay at bottom of video
+                // Wrap the overlay controls in an animated Box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .graphicsLayer { 
+                            translationY = offsetY 
+                        }
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Top Row with Profile and Likes
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Left side: Profile and Username
+                            Row(
+                                modifier = Modifier
+                                    .clickable { 
+                                        viewModel.currentVideo?.authorId?.let { authorId ->
+                                            onNavigateToProfile(authorId)
+                                        }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Start
+                            ) {
+                                // Profile Picture
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                ) {
+                                    Icon(
+                                        Icons.Default.Person,
+                                        "Profile",
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .align(Alignment.Center)
+                                    )
+                                }
+
+                                // Username
+                                Text(
+                                    text = viewModel.currentVideo?.authorUsername ?: "Unknown",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .padding(start = 8.dp)
+                                        .background(
+                                            color = Color.Black.copy(alpha = 0.5f),
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .padding(vertical = 4.dp, horizontal = 8.dp)
+                                )
+                            }
+
+                            // Likes Row
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Likes count
+                                Text(
+                                    text = viewModel.formatNumber(viewModel.currentVideo?.likes ?: 0),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .background(
+                                            color = Color.Black.copy(alpha = 0.5f),
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .padding(vertical = 4.dp, horizontal = 8.dp)
+                                )
+                                
+                                // Like Button
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                ) {
+                                    IconButton(
+                                        onClick = { viewModel.toggleLike() },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Favorite,
+                                            contentDescription = "Like",
+                                            tint = if (viewModel.isLiked) Color.Red else Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Comments Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Comments count
+                            Text(
+                                text = "0", // Placeholder for comments count
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .background(
+                                        color = Color.Black.copy(alpha = 0.5f),
+                                        shape = MaterialTheme.shapes.medium
+                                    )
+                                    .padding(vertical = 4.dp, horizontal = 8.dp)
+                            )
+                            
+                            // Comments Button
+                            Box(
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f))
+                            ) {
+                                IconButton(
+                                    onClick = { /* TODO: Implement comments */ },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ChatBubbleOutline,
+                                        contentDescription = "Comments",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Score Display overlay at bottom of video (keep this outside the animated overlay)
                 if (showActualLocation) {
                     Box(
                         modifier = Modifier
@@ -425,55 +601,6 @@ fun MainScreen(
                                 }
                             }
                         }
-                    }
-                }
-
-                // Overlay Controls
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(end = 16.dp, top = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    IconButton(
-                        onClick = onProfileClick,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
-                    ) {
-                        Icon(Icons.Default.Person, "Profile", tint = Color.White)
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                    IconButton(
-                            onClick = { viewModel.toggleLike() },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
-                    ) {
-                            Icon(
-                                imageVector = Icons.Default.Favorite,
-                                contentDescription = "Like",
-                                tint = if (viewModel.isLiked) Color.Red else Color.White
-                            )
-                        }
-                        
-                        // Likes count with formatted number
-                        Text(
-                            text = viewModel.formatNumber(viewModel.currentVideo?.likes ?: 0),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color.White,
-                            modifier = Modifier
-                                .background(
-                                    color = Color.Black.copy(alpha = 0.5f),
-                                    shape = CircleShape
-                                )
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
                     }
                 }
             }

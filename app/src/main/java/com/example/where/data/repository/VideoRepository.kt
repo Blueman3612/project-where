@@ -55,6 +55,7 @@ class VideoRepository @Inject constructor(
         description: String? = null,
         thumbnailUrl: String? = null,
         authorId: String,
+        authorUsername: String,
         source: VideoSource
     ): Video {
         Log.d(TAG, "Adding video: $title at location: $location")
@@ -66,6 +67,7 @@ class VideoRepository @Inject constructor(
             title = title,
             description = description,
             authorId = authorId,
+            authorUsername = authorUsername,
             source = source
         )
         
@@ -89,6 +91,10 @@ class VideoRepository @Inject constructor(
         Log.d(TAG, "Starting video upload from Uri: $videoUri")
         
         try {
+            // Get the user's username
+            val userDoc = firestore.collection("users").document(authorId).get().await()
+            val authorUsername = userDoc.getString("username") ?: throw Exception("User not found")
+
             // Upload video to Firebase Storage with chunked upload
             val videoRef = storage.reference.child("videos/${System.currentTimeMillis()}_${authorId}.mp4")
             
@@ -127,6 +133,7 @@ class VideoRepository @Inject constructor(
                     description = description,
                     thumbnailUrl = thumbnailUrl,
                     authorId = authorId,
+                    authorUsername = authorUsername,
                     source = VideoSource.USER_UPLOAD
                 )
             } catch (e: Exception) {
@@ -374,13 +381,38 @@ class VideoRepository @Inject constructor(
             Log.d(TAG, "Selected random video with id: ${randomDoc.id}")
             Log.d(TAG, "Document data: ${randomDoc.data}")
             
-            return randomDoc.data?.let { data -> 
-                Video.fromMap(data) ?: run {
-                    Log.e(TAG, "Failed to parse video data, clearing invalid document")
-                    // Optionally delete invalid document
-                    videosCollection.document(randomDoc.id).delete()
-                    null
+            val data = randomDoc.data ?: return null
+            
+            // If authorUsername is missing, try to fetch it from the user document
+            if (data["authorUsername"] == null && data["authorId"] != null) {
+                try {
+                    val authorId = data["authorId"] as String
+                    val userDoc = firestore.collection("users").document(authorId).get().await()
+                    val username = userDoc.getString("username") ?: "Unknown User"
+                    
+                    // Update only the authorUsername field
+                    videosCollection.document(randomDoc.id)
+                        .update(mapOf("authorUsername" to username))
+                        .await()
+                    
+                    // Update the local data map
+                    val updatedData = data.toMutableMap().apply {
+                        put("authorUsername", username)
+                    }
+                    
+                    return Video.fromMap(updatedData)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating authorUsername: ${e.message}")
+                    // Continue with original data if update fails
+                    return Video.fromMap(data)
                 }
+            }
+            
+            // Try to parse the video data
+            return Video.fromMap(data) ?: run {
+                Log.e(TAG, "Failed to parse video data for document ${randomDoc.id}")
+                Log.e(TAG, "Document data: $data")
+                null
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting random video: ${e.message}")
@@ -445,6 +477,7 @@ class VideoRepository @Inject constructor(
                 title = testVideo.third,
                 description = "A test video of Chicago",
                 authorId = "test_author",
+                authorUsername = "TestUser",
                 source = VideoSource.PEXELS
             )
             Log.d(TAG, "Successfully added test video")

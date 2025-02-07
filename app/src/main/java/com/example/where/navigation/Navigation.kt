@@ -130,14 +130,14 @@ fun AppNavigation(
         }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues)) {
-            NavHost(
-                navController = navController,
-                startDestination = startDestination
-            ) {
+    NavHost(
+        navController = navController,
+        startDestination = startDestination
+    ) {
                 composable(Screen.Discover.route) {
-                    MainScreen(
-                        onProfileClick = {
-                            navController.navigate(Screen.Profile.route)
+            MainScreen(
+                        onNavigateToProfile = { userId ->
+                            navController.navigate(Screen.UserProfile.createRoute(userId))
                         }
                     )
                 }
@@ -151,8 +151,8 @@ fun AppNavigation(
                 
                 composable(Screen.Create.route) {
                     UploadScreen(
-                        onNavigateBack = {
-                            navController.popBackStack()
+                onNavigateBack = {
+                    navController.popBackStack()
                         }
                     )
                 }
@@ -192,10 +192,10 @@ fun AppNavigation(
                             onNavigateToAuth = {
                                 navController.navigate(Screen.Auth.route)
                             },
-                            onNavigateBack = {
-                                navController.popBackStack()
-                            }
-                        )
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
                     }
                 }
 

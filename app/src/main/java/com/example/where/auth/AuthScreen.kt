@@ -28,6 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Person
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.example.where.R
 
 @Composable
 fun AuthScreen(
@@ -213,9 +216,34 @@ fun AuthScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
+                    .height(50.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.DarkGray
+                ),
+                border = ButtonDefaults.outlinedButtonBorder.copy(
+                    brush = SolidColor(Color.LightGray)
+                )
             ) {
-                Text("Sign in with Google")
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_google_logo),
+                        contentDescription = "Google Logo",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Sign in with Google",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
                 }
+            }
             }
 
             if (isLoading) {
@@ -239,34 +267,6 @@ fun AuthScreen(
                 color = Color.White.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 16.dp, start = 32.dp, end = 32.dp)
             )
-        }
-
-        // Test Users Generator Button (bottom-right corner)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.BottomEnd
-        ) {
-            OutlinedButton(
-                onClick = { 
-                    scope.launch {
-                        viewModel.generateTestUsers()
-                    }
-                },
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.White.copy(alpha = 0.5f)
-                ),
-                border = ButtonDefaults.outlinedButtonBorder.copy(
-                    brush = SolidColor(Color.White.copy(alpha = 0.3f))
-                ),
-                modifier = Modifier.size(width = 120.dp, height = 40.dp)
-            ) {
-                Text(
-                    "Generate Users",
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
         }
     }
 
