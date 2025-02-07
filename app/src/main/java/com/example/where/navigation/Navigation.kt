@@ -24,6 +24,7 @@ import com.example.where.ui.profile.ProfileScreen
 import com.example.where.ui.upload.UploadScreen
 import com.example.where.ui.auth.AuthScreen
 import com.example.where.ui.search.SearchScreen
+import com.example.where.ui.components.TopBar
 
 sealed class Screen(
     val route: String,
@@ -67,6 +68,12 @@ fun AppNavigation(
     val isInSearchSection = currentRoute?.startsWith("search") ?: false
 
     Scaffold(
+        topBar = {
+            TopBar(
+                canNavigateBack = navController.previousBackStackEntry != null,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -134,9 +141,14 @@ fun AppNavigation(
         startDestination = startDestination
     ) {
                 composable(Screen.Home.route) {
-            MainScreen(
+                    MainScreen(
                         onNavigateToProfile = { userId ->
                             navController.navigate(Screen.UserProfile.createRoute(userId))
+                        },
+                        onNavigateBack = {
+                            if (navController.previousBackStackEntry != null) {
+                                navController.popBackStack()
+                            }
                         }
                     )
                 }

@@ -41,16 +41,7 @@ fun UploadScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Upload Video") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack, enabled = !viewModel.isUploading) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {  // Wrap everything in a Box for overlay
             Column(
