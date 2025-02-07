@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -26,10 +28,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -49,7 +53,9 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import androidx.compose.animation.core.*
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.unit.IntOffset
+import com.google.firebase.auth.FirebaseAuth
+import com.example.where.data.model.Comment
+import com.example.where.ui.components.CommentDialog
 import kotlin.math.roundToInt
 
 private const val TAG = "MainScreen"
@@ -87,6 +93,10 @@ fun MainScreen(
     var totalHeight by remember { mutableStateOf(0f) }
     var mapHeight by remember { mutableStateOf(0.4f) }
     val density = LocalDensity.current
+    val comments by viewModel.comments.collectAsStateWithLifecycle()
+    val showComments by remember { derivedStateOf { viewModel.showComments } }
+    val isLoadingComments by remember { derivedStateOf { viewModel.isLoadingComments } }
+    val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid }
     
     // Track composition memory usage
     SideEffect {
@@ -410,7 +420,7 @@ fun MainScreen(
                             modifier = Modifier
                                 .fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
                             // Left side: Profile and Username
                             Row(
@@ -455,89 +465,99 @@ fun MainScreen(
                                 )
                             }
 
-                            // Likes Row
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            // Right side: Likes and Comments
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Likes count
-                                Text(
-                                    text = viewModel.formatNumber(viewModel.currentVideo?.likes ?: 0),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(
-                                            color = Color.Black.copy(alpha = 0.5f),
-                                            shape = MaterialTheme.shapes.medium
-                                        )
-                                        .padding(vertical = 4.dp, horizontal = 8.dp)
-                                )
-                                
-                                // Like Button
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Black.copy(alpha = 0.5f))
+                                // Likes Row
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.End
                                 ) {
+                                    // Like Count
+                                    Text(
+                                        text = viewModel.currentVideo?.likes?.let { viewModel.formatNumber(it) } ?: "0",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White,
+                                        modifier = Modifier
+                                            .padding(end = 8.dp)
+                                            .background(
+                                                color = Color.Black.copy(alpha = 0.5f),
+                                                shape = MaterialTheme.shapes.medium
+                                            )
+                                            .padding(vertical = 4.dp, horizontal = 8.dp)
+                                    )
+                                    // Like Button
                                     IconButton(
                                         onClick = { viewModel.toggleLike() },
-                                        modifier = Modifier.size(40.dp)
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .background(
+                                                color = Color.Black.copy(alpha = 0.5f),
+                                                shape = CircleShape
+                                            )
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Favorite,
-                                            contentDescription = "Like",
+                                            imageVector = if (viewModel.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                            contentDescription = if (viewModel.isLiked) "Unlike" else "Like",
                                             tint = if (viewModel.isLiked) Color.Red else Color.White,
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                }
+                                
+                                // Comments Row
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    // Comments Count
+                                    Text(
+                                        text = "${comments.size}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White,
+                                        modifier = Modifier
+                                            .padding(end = 8.dp)
+                                            .background(
+                                                color = Color.Black.copy(alpha = 0.5f),
+                                                shape = MaterialTheme.shapes.medium
+                                            )
+                                            .padding(vertical = 4.dp, horizontal = 8.dp)
+                                    )
+                                    // Comment Button
+                                    IconButton(
+                                        onClick = { viewModel.toggleComments() },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .background(
+                                                color = Color.Black.copy(alpha = 0.5f),
+                                                shape = CircleShape
+                                            )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                                            contentDescription = "Comments",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(28.dp)
                                         )
                                     }
                                 }
                             }
                         }
-
-                        // Comments Row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Comments count
-                            Text(
-                                text = "0", // Placeholder for comments count
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                modifier = Modifier
-                                    .background(
-                                        color = Color.Black.copy(alpha = 0.5f),
-                                        shape = MaterialTheme.shapes.medium
-                                    )
-                                    .padding(vertical = 4.dp, horizontal = 8.dp)
-                            )
-                            
-                            // Comments Button
-                            Box(
-                                modifier = Modifier
-                                    .padding(start = 8.dp)
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.5f))
-                            ) {
-                                IconButton(
-                                    onClick = { /* TODO: Implement comments */ },
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ChatBubbleOutline,
-                                        contentDescription = "Comments",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                            }
-                        }
                     }
+                }
+
+                // Comment Dialog
+                if (showComments) {
+                    CommentDialog(
+                        comments = comments,
+                        onDismiss = { viewModel.toggleComments() },
+                        onAddComment = { viewModel.addComment(it) },
+                        onDeleteComment = { viewModel.deleteComment(it) },
+                        currentUserId = currentUserId,
+                        isLoading = isLoadingComments
+                    )
                 }
 
                 // Score Display overlay at bottom of video (keep this outside the animated overlay)

@@ -7,10 +7,15 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.where.data.model.Video
+import com.example.where.data.model.Comment
 import com.example.where.data.repository.VideoRepository
+import com.example.where.data.repository.CommentRepository
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -19,6 +24,7 @@ import kotlin.math.*
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val videoRepository: VideoRepository,
+    private val commentRepository: CommentRepository,
     private val auth: FirebaseAuth
 ) : ViewModel() {
 
@@ -43,8 +49,18 @@ class MainViewModel @Inject constructor(
     var lastGuessDistance by mutableStateOf<Double?>(null)
         private set
 
-    private var _isLiked = mutableStateOf(false)
+    private val _isLiked = mutableStateOf(false)
     val isLiked: Boolean get() = _isLiked.value
+
+    // Comment-related state
+    private val _comments = MutableStateFlow<List<Comment>>(emptyList())
+    val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
+
+    private val _showComments = mutableStateOf(false)
+    val showComments: Boolean get() = _showComments.value
+
+    private val _isLoadingComments = mutableStateOf(false)
+    val isLoadingComments: Boolean get() = _isLoadingComments.value
 
     init {
         viewModelScope.launch {
@@ -206,6 +222,55 @@ class MainViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error toggling like: ${e.message}")
                 error = "Failed to update like"
+            }
+        }
+    }
+
+    fun toggleComments() {
+        _showComments.value = !_showComments.value
+        if (_showComments.value) {
+            loadComments()
+        }
+    }
+
+    private fun loadComments() {
+        currentVideo?.let { video ->
+            viewModelScope.launch {
+                _isLoadingComments.value = true
+                try {
+                    commentRepository.getCommentsForVideo(video.id)
+                        .collect { commentsList ->
+                            _comments.value = commentsList
+                        }
+                } catch (e: Exception) {
+                    error = "Failed to load comments: ${e.message}"
+                } finally {
+                    _isLoadingComments.value = false
+                }
+            }
+        }
+    }
+
+    fun addComment(text: String) {
+        currentVideo?.let { video ->
+            auth.currentUser?.uid?.let { userId ->
+                viewModelScope.launch {
+                    try {
+                        commentRepository.addComment(video.id, text)
+                    } catch (e: Exception) {
+                        error = "Failed to add comment: ${e.message}"
+                    }
+                }
+            }
+        }
+    }
+
+    fun deleteComment(commentId: String) {
+        viewModelScope.launch {
+            try {
+                commentRepository.deleteComment(commentId)
+            } catch (e: Exception) {
+                error = "Failed to delete comment: ${e.message}"
             }
         }
     }
