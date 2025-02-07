@@ -29,6 +29,9 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import java.lang.ref.WeakReference
 import com.example.where.ui.components.CommentSheet
+import com.example.where.ui.components.LikeAnimation
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,8 +109,30 @@ fun VideoScreen(
                                 currentPlayerView.value = WeakReference(it)
                             }
                         },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onDoubleTap = { offset ->
+                                        viewModel.showLikeAnimation()
+                                        viewModel.toggleLike()
+                                    }
+                                )
+                            }
                     )
+
+                    // Like Animation overlay
+                    if (viewModel.showLikeAnimation) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LikeAnimation(
+                                visible = true,
+                                onAnimationEnd = { viewModel.hideLikeAnimation() }
+                            )
+                        }
+                    }
 
                     // Author info overlay at top
                     viewModel.video?.let { video ->
@@ -171,16 +196,14 @@ fun VideoScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             // Like Count
-                            viewModel.video?.let { video ->
-                                Text(
-                                    text = viewModel.formatNumber(video.likes),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
+                            Text(
+                                text = viewModel.formatNumber(viewModel.currentLikeCount),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
                             // Like Button
                             IconButton(
                                 onClick = { viewModel.toggleLike() },

@@ -267,6 +267,14 @@ fun AuthScreen(
                 color = Color.White.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 16.dp, start = 32.dp, end = 32.dp)
             )
+
+            // Version text
+            Text(
+                text = "Alpha v1.0",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
     }
 

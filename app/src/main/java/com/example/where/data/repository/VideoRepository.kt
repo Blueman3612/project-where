@@ -503,34 +503,6 @@ class VideoRepository @Inject constructor(
         }
     }
 
-    suspend fun addRandomLikesToExistingVideos() {
-        try {
-            Log.d(TAG, "Starting to add random likes to videos...")
-            val snapshot = videosCollection.get().await()
-            Log.d(TAG, "Found ${snapshot.documents.size} videos to update")
-            
-            snapshot.documents.forEach { doc ->
-                val currentData = doc.data
-                if (currentData != null) {
-                    // Only update if likes field doesn't exist or is 0
-                    if (currentData["likes"] == null || (currentData["likes"] as? Number)?.toInt() == 0) {
-                        val randomLikes = (1..1000).random()
-                        Log.d(TAG, "Adding $randomLikes likes to video ${doc.id}")
-                        
-                        videosCollection.document(doc.id)
-                            .update("likes", randomLikes)
-                            .await()
-                    }
-                }
-            }
-            
-            Log.d(TAG, "Successfully added random likes to all videos")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error adding random likes to videos: ${e.message}")
-            throw e
-        }
-    }
-
     suspend fun toggleLike(videoId: String, userId: String): Boolean {
         try {
             // Get user's likes document

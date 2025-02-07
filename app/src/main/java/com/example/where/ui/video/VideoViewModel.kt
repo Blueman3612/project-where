@@ -35,6 +35,12 @@ class VideoViewModel @Inject constructor(
     var isLiked by mutableStateOf(false)
         private set
 
+    var showLikeAnimation by mutableStateOf(false)
+        private set
+
+    private val _currentLikeCount = mutableStateOf(0)
+    val currentLikeCount: Int get() = _currentLikeCount.value
+
     // Comment-related state
     private val _comments = MutableStateFlow<List<Comment>>(emptyList())
     val comments = _comments.asStateFlow()
@@ -56,9 +62,12 @@ class VideoViewModel @Inject constructor(
                 
                 video = videoRepository.getVideo(videoId)
                 
-                // Check if the current user has liked this video
-                auth.currentUser?.uid?.let { userId ->
-                    isLiked = videoRepository.isVideoLiked(videoId, userId)
+                // Check if the current user has liked this video and set initial like count
+                video?.let { currentVideo ->
+                    auth.currentUser?.uid?.let { userId ->
+                        isLiked = videoRepository.isVideoLiked(currentVideo.id, userId)
+                    }
+                    _currentLikeCount.value = currentVideo.likes
                 }
             } catch (e: Exception) {
                 error = "Failed to load video: ${e.message}"
@@ -75,10 +84,8 @@ class VideoViewModel @Inject constructor(
                     auth.currentUser?.uid?.let { userId ->
                         val newLikeState = videoRepository.toggleLike(currentVideo.id, userId)
                         isLiked = newLikeState
-                        // Update the video's like count
-                        video = currentVideo.copy(
-                            likes = currentVideo.likes + (if (newLikeState) 1 else -1)
-                        )
+                        // Update only the like count
+                        _currentLikeCount.value += if (newLikeState) 1 else -1
                     }
                 }
             } catch (e: Exception) {
@@ -165,5 +172,13 @@ class VideoViewModel @Inject constructor(
     fun formatTimestamp(timestamp: Long): String {
         val sdf = java.text.SimpleDateFormat("hh:mm a, M/d/yyyy", java.util.Locale.getDefault())
         return sdf.format(java.util.Date(timestamp))
+    }
+
+    fun showLikeAnimation() {
+        showLikeAnimation = true
+    }
+
+    fun hideLikeAnimation() {
+        showLikeAnimation = false
     }
 } 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -68,9 +70,9 @@ import androidx.compose.foundation.layout.offset
 import com.google.firebase.auth.FirebaseAuth
 import com.example.where.data.model.Comment
 import com.example.where.ui.components.CommentSheet
+import com.example.where.ui.components.LikeAnimation
 import kotlin.math.roundToInt
 import com.example.where.ui.components.TopBar
-import androidx.compose.foundation.layout.wrapContentSize
 
 private const val TAG = "MainScreen"
 
@@ -214,19 +216,19 @@ fun MainScreen(
     }
 
     // Handle current video changes
-    LaunchedEffect(viewModel.currentVideo) {
-        viewModel.currentVideo?.let { video ->
+    LaunchedEffect(viewModel.currentVideoUrl) {
+        viewModel.currentVideoUrl?.let { video ->
             // First detach the player
             currentPlayerView.value?.get()?.player = null
             
             // Then update the current player
             currentPlayer.apply {
-                    stop()
-                    clearMediaItems()
-                    setMediaItem(MediaItem.fromUri(video.url))
-                    prepare()
-                    playWhenReady = true
-                }
+                stop()
+                clearMediaItems()
+                setMediaItem(MediaItem.fromUri(video.url))
+                prepare()
+                playWhenReady = true
+            }
             
             // Finally reattach the player and force a surface refresh
             currentPlayerView.value?.get()?.apply {
@@ -270,7 +272,7 @@ fun MainScreen(
     var showActualLocation by remember { mutableStateOf(false) }
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(
-            viewModel.currentVideo?.location ?: LatLng(0.0, 0.0),
+            viewModel.currentVideoUrl?.location ?: LatLng(0.0, 0.0),
             2f
         )
     }
@@ -341,236 +343,252 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Video Player Section
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(1f - mapHeight)
-                        .background(Color.Black)
-                        .offset { IntOffset(swipeOffset.roundToInt(), 0) }
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures(
-                                onDragEnd = {
-                                    // Use the last drag direction to determine overlay state
-                                    if (kotlin.math.abs(lastDragDirection) > 5) {
-                                        showOverlay = lastDragDirection > 0
-                                    }
-                                }
-                            ) { _, dragAmount ->
-                                // Store the drag direction and update overlay
-                                lastDragDirection = dragAmount
-                                if (kotlin.math.abs(dragAmount) > 5) {
-                                    showOverlay = dragAmount > 0
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Video Player Section
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(1f - mapHeight)
+                    .background(Color.Black)
+                    .offset { IntOffset(swipeOffset.roundToInt(), 0) }
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                // Use the last drag direction to determine overlay state
+                                if (kotlin.math.abs(lastDragDirection) > 5) {
+                                    showOverlay = lastDragDirection > 0
                                 }
                             }
+                        ) { _, dragAmount ->
+                            // Store the drag direction and update overlay
+                            lastDragDirection = dragAmount
+                            if (kotlin.math.abs(dragAmount) > 5) {
+                                showOverlay = dragAmount > 0
+                            }
                         }
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { isSwipeInProgress = true },
-                                onDragEnd = {
-                                    if (swipeOffset < -400 && showActualLocation) {  // Threshold for swipe
-                                        // Detach player before switch
-                                        currentPlayerView.value?.get()?.apply {
-                                            player = null
-                                            setShutterBackgroundColor(AndroidColor.BLACK)
-                                        }
-                                        viewModel.switchToNextVideo()
-                                        showActualLocation = false
-                                        selectedLocation = null
+                    }
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { isSwipeInProgress = true },
+                            onDragEnd = {
+                                if (swipeOffset < -400 && showActualLocation) {  // Threshold for swipe
+                                    // Detach player before switch
+                                    currentPlayerView.value?.get()?.apply {
+                                        player = null
+                                        setShutterBackgroundColor(AndroidColor.BLACK)
                                     }
-                                    swipeOffset = 0f
-                                    isSwipeInProgress = false
-                                },
-                                onDragCancel = {
-                                    swipeOffset = 0f
-                                    isSwipeInProgress = false
-                                },
-                                onHorizontalDrag = { _, dragAmount ->
-                                    if (showActualLocation) {  // Only allow swipe after guessing
-                                        swipeOffset = (swipeOffset + dragAmount).coerceAtMost(0f)
-                                    }
+                                    viewModel.switchToNextVideo()
+                                    showActualLocation = false
+                                    selectedLocation = null
                                 }
-                            )
-                        }
-                ) {
-                    if (viewModel.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center),
-                            color = Color.White
-                        )
-                    } else {
-                        AndroidView(
-                            factory = { context ->
-                                PlayerView(context).apply {
-                                    layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-                                    useController = false
-                                    setKeepContentOnPlayerReset(true)
-                                    setShutterBackgroundColor(AndroidColor.BLACK)
-                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                    setKeepScreenOn(true)
-                                    // Set player after configuration
-                                    player = currentPlayer
-                                }.also { playerView ->
-                                    currentPlayerView.value = WeakReference(playerView)
-                                }
+                                swipeOffset = 0f
+                                isSwipeInProgress = false
                             },
-                            modifier = Modifier.fillMaxSize(),
-                            update = { playerView ->
-                                // Ensure player is attached during updates
-                                if (playerView.player == null) {
-                                    playerView.player = currentPlayer
+                            onDragCancel = {
+                                swipeOffset = 0f
+                                isSwipeInProgress = false
+                            },
+                            onHorizontalDrag = { _, dragAmount ->
+                                if (showActualLocation) {  // Only allow swipe after guessing
+                                    swipeOffset = (swipeOffset + dragAmount).coerceAtMost(0f)
                                 }
                             }
                         )
                     }
-
-                    // Wrap the overlay controls in an animated Box
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                            .graphicsLayer { 
-                                translationY = offsetY 
+            ) {
+                if (viewModel.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = Color.White
+                    )
+                } else {
+                    AndroidView(
+                        factory = { context ->
+                            PlayerView(context).apply {
+                                layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+                                useController = false
+                                setKeepContentOnPlayerReset(true)
+                                setShutterBackgroundColor(AndroidColor.BLACK)
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                setKeepScreenOn(true)
+                                // Set player after configuration
+                                player = currentPlayer
+                            }.also { playerView ->
+                                currentPlayerView.value = WeakReference(playerView)
                             }
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth()
+                        },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onDoubleTap = { offset ->
+                                            viewModel.showLikeAnimation()
+                                            viewModel.toggleLike()
+                                        }
+                                    )
+                                }
+                        )
+                    }
+
+                    // Like Animation overlay
+                    if (viewModel.showLikeAnimation) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            // Top Row with Profile and Likes
+                            LikeAnimation(
+                                visible = true,
+                                onAnimationEnd = { viewModel.hideLikeAnimation() }
+                            )
+                        }
+                    }
+
+                // Wrap the overlay controls in an animated Box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .graphicsLayer { 
+                            translationY = offsetY 
+                        }
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Top Row with Profile and Likes
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            // Left side: Profile and Username
                             Row(
                                 modifier = Modifier
-                                    .fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.Top
+                                    .clickable { 
+                                        viewModel.currentVideoUrl?.let { video ->
+                                            onNavigateToProfile(video.authorId)
+                                        }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Start
                             ) {
-                                // Left side: Profile and Username
-                                Row(
+                                // Profile Picture
+                                Box(
                                     modifier = Modifier
-                                        .clickable { 
-                                            viewModel.currentVideo?.authorId?.let { authorId ->
-                                                onNavigateToProfile(authorId)
-                                            }
-                                        },
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Start
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.5f))
                                 ) {
-                                    // Profile Picture
-                                    Box(
+                                    Icon(
+                                        Icons.Default.Person,
+                                        "Profile",
+                                        tint = Color.White,
                                         modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(CircleShape)
-                                            .background(Color.Black.copy(alpha = 0.5f))
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Person,
-                                            "Profile",
-                                            tint = Color.White,
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .align(Alignment.Center)
-                                        )
-                                    }
+                                            .size(24.dp)
+                                            .align(Alignment.Center)
+                                    )
+                                }
 
-                                    // Username
+                                // Username
+                                Text(
+                                    text = viewModel.currentVideoUrl?.authorUsername ?: "Unknown",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .padding(start = 8.dp)
+                                        .background(
+                                            color = Color.Black.copy(alpha = 0.5f),
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .padding(vertical = 4.dp, horizontal = 8.dp)
+                                )
+                            }
+
+                            // Right side: Likes and Comments
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Likes Row
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    // Like Count
                                     Text(
-                                        text = viewModel.currentVideo?.authorUsername ?: "Unknown",
+                                        text = viewModel.formatNumber(viewModel.currentLikeCount),
                                         style = MaterialTheme.typography.titleMedium,
                                         color = Color.White,
                                         modifier = Modifier
-                                            .padding(start = 8.dp)
+                                            .padding(end = 8.dp)
                                             .background(
                                                 color = Color.Black.copy(alpha = 0.5f),
                                                 shape = MaterialTheme.shapes.medium
                                             )
                                             .padding(vertical = 4.dp, horizontal = 8.dp)
                                     )
-                                }
-
-                                // Right side: Likes and Comments
-                                Column(
-                                    horizontalAlignment = Alignment.End,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    // Likes Row
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        // Like Count
-                                        Text(
-                                            text = viewModel.currentVideo?.likes?.let { viewModel.formatNumber(it) } ?: "0",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = Color.White,
-                                            modifier = Modifier
-                                                .padding(end = 8.dp)
-                                                .background(
-                                                    color = Color.Black.copy(alpha = 0.5f),
-                                                    shape = MaterialTheme.shapes.medium
-                                                )
-                                                .padding(vertical = 4.dp, horizontal = 8.dp)
-                                        )
-                                        // Like Button
-                                        IconButton(
-                                            onClick = { viewModel.toggleLike() },
-                                            modifier = Modifier
-                                                .size(48.dp)
-                                                .background(
-                                                    color = Color.Black.copy(alpha = 0.5f),
-                                                    shape = CircleShape
-                                                )
-                                        ) {
-                                            Icon(
-                                                imageVector = if (viewModel.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                                contentDescription = if (viewModel.isLiked) "Unlike" else "Like",
-                                                tint = if (viewModel.isLiked) Color.Red else Color.White,
-                                                modifier = Modifier.size(28.dp)
+                                    // Like Button
+                                    IconButton(
+                                        onClick = { viewModel.toggleLike() },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .background(
+                                                color = Color.Black.copy(alpha = 0.5f),
+                                                shape = CircleShape
                                             )
-                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (viewModel.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                            contentDescription = if (viewModel.isLiked) "Unlike" else "Like",
+                                            tint = if (viewModel.isLiked) Color.Red else Color.White,
+                                            modifier = Modifier.size(28.dp)
+                                        )
                                     }
-                                    
-                                    // Comments Row
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        // Comments Count
-                                        Text(
+                                }
+                                
+                                // Comments Row
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    // Comments Count
+                                    Text(
                                             text = viewModel.formatNumber(viewModel.commentCount),
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = Color.White,
-                                            modifier = Modifier
-                                                .padding(end = 8.dp)
-                                                .background(
-                                                    color = Color.Black.copy(alpha = 0.5f),
-                                                    shape = MaterialTheme.shapes.medium
-                                                )
-                                                .padding(vertical = 4.dp, horizontal = 8.dp)
-                                        )
-                                        // Comment Button
-                                        IconButton(
-                                            onClick = { viewModel.toggleComments() },
-                                            modifier = Modifier
-                                                .size(48.dp)
-                                                .background(
-                                                    color = Color.Black.copy(alpha = 0.5f),
-                                                    shape = CircleShape
-                                                )
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.ChatBubbleOutline,
-                                                contentDescription = "Comments",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(28.dp)
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White,
+                                        modifier = Modifier
+                                            .padding(end = 8.dp)
+                                            .background(
+                                                color = Color.Black.copy(alpha = 0.5f),
+                                                shape = MaterialTheme.shapes.medium
                                             )
-                                        }
+                                            .padding(vertical = 4.dp, horizontal = 8.dp)
+                                    )
+                                    // Comment Button
+                                    IconButton(
+                                        onClick = { viewModel.toggleComments() },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .background(
+                                                color = Color.Black.copy(alpha = 0.5f),
+                                                shape = CircleShape
+                                            )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                                            contentDescription = "Comments",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(28.dp)
+                                        )
                                     }
                                 }
                             }
                         }
                     }
+                }
 
-                    // Comment Dialog
+                // Comment Dialog
                     CommentSheet(
                         comments = comments,
                         onDismiss = { viewModel.toggleComments() },
@@ -581,157 +599,157 @@ fun MainScreen(
                         isVisible = showComments
                     )
 
-                    // Score Display overlay at bottom of video (keep this outside the animated overlay)
-                    if (showActualLocation) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.3f))
-                                .padding(8.dp)
+                // Score Display overlay at bottom of video (keep this outside the animated overlay)
+                if (showActualLocation) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.3f))
+                            .padding(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            // Total Score
+                            Column(
+                                horizontalAlignment = Alignment.Start
                             ) {
-                                // Total Score
-                                Column(
-                                    horizontalAlignment = Alignment.Start
-                                ) {
-                                    Text(
-                                        text = "Total Score",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = Color.White.copy(alpha = 0.7f)
-                                    )
-                                    Text(
-                                        text = "${viewModel.currentScore}",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = Color.White
-                                    )
-                                }
+                                Text(
+                                    text = "Total Score",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = "${viewModel.currentScore}",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = Color.White
+                                )
+                            }
 
-                                // Last Guess Score and Distance
-                                viewModel.lastGuessScore?.let { score ->
-                                    Column(
-                                        horizontalAlignment = Alignment.End
+                            // Last Guess Score and Distance
+                            viewModel.lastGuessScore?.let { score ->
+                                Column(
+                                    horizontalAlignment = Alignment.End
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Add,
-                                                contentDescription = null,
-                                                tint = Color.Green,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Text(
-                                                text = "$score",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = Color.Green
-                                            )
-                                        }
-                                        viewModel.lastGuessDistance?.let { distance ->
-                                            Text(
-                                                text = viewModel.formatDistance(distance),
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = Color.White.copy(alpha = 0.7f)
-                                            )
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = null,
+                                            tint = Color.Green,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "$score",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = Color.Green
+                                        )
+                                    }
+                                    viewModel.lastGuessDistance?.let { distance ->
+                                        Text(
+                                            text = viewModel.formatDistance(distance),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = Color.White.copy(alpha = 0.7f)
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                // Draggable Divider
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .background(Color.DarkGray)
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures { _, dragAmount ->
-                                mapHeight = (mapHeight - dragAmount / totalHeight).coerceIn(0.2f, 0.8f)
-                            }
+            // Draggable Divider
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(Color.DarkGray)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures { _, dragAmount ->
+                            mapHeight = (mapHeight - dragAmount / totalHeight).coerceIn(0.2f, 0.8f)
                         }
-                )
+                    }
+            )
 
-                // Map Section (remove swipe detection and score display)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .onSizeChanged { 
-                            with(density) { totalHeight = it.height.toDp().value }
+            // Map Section (remove swipe detection and score display)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .onSizeChanged { 
+                        with(density) { totalHeight = it.height.toDp().value }
+                    }
+            ) {
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = cameraPositionState,
+                    onMapClick = { latLng ->
+                        if (!showActualLocation && !isSwipeInProgress) {
+                        selectedLocation = latLng
                         }
+                    }
                 ) {
-                    GoogleMap(
-                        modifier = Modifier.fillMaxSize(),
-                        cameraPositionState = cameraPositionState,
-                        onMapClick = { latLng ->
-                            if (!showActualLocation && !isSwipeInProgress) {
-                            selectedLocation = latLng
-                            }
-                        }
-                    ) {
-                        // Show selected location marker
-                        selectedLocation?.let { location ->
+                    // Show selected location marker
+                    selectedLocation?.let { location ->
+                        Marker(
+                            state = MarkerState(position = location),
+                            title = "Your Guess",
+                            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                        )
+                    }
+
+                    // Show actual location and polyline when guess is submitted
+                    if (showActualLocation && selectedLocation != null) {
+                        viewModel.currentVideoUrl?.let { video ->
+                            // Actual location marker
                             Marker(
-                                state = MarkerState(position = location),
-                                title = "Your Guess",
-                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                                state = MarkerState(position = video.location),
+                                title = "Actual Location",
+                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
                             )
-                        }
 
-                        // Show actual location and polyline when guess is submitted
-                        if (showActualLocation && selectedLocation != null) {
-                            viewModel.currentVideo?.location?.let { actualLocation ->
-                                // Actual location marker
-                                Marker(
-                                    state = MarkerState(position = actualLocation),
-                                    title = "Actual Location",
-                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+                            // Dotted line between guess and actual location
+                            Polyline(
+                                points = listOf(selectedLocation!!, video.location),
+                                pattern = listOf(Dot(), Gap(20f)),
+                                color = androidx.compose.ui.graphics.Color.DarkGray,
+                                width = 5f
+                            )
+
+                            // Update camera position to show both markers
+                            LaunchedEffect(selectedLocation, video.location) {
+                                val (bounds, zoom) = calculateBounds(selectedLocation!!, video.location)
+                                cameraPositionState.animate(
+                                    update = CameraUpdateFactory.newLatLngBounds(bounds, 100),
+                                    durationMs = 1000
                                 )
-
-                                // Dotted line between guess and actual location
-                                Polyline(
-                                    points = listOf(selectedLocation!!, actualLocation),
-                                    pattern = listOf(Dot(), Gap(20f)),
-                                    color = androidx.compose.ui.graphics.Color.DarkGray,
-                                    width = 5f
-                                )
-
-                                // Update camera position to show both markers
-                                LaunchedEffect(selectedLocation, actualLocation) {
-                                    val (bounds, zoom) = calculateBounds(selectedLocation!!, actualLocation)
-                                    cameraPositionState.animate(
-                                        update = CameraUpdateFactory.newLatLngBounds(bounds, 100),
-                                        durationMs = 1000
-                                    )
-                                }
                             }
                         }
                     }
+                }
 
-                    // Submit Guess Button (only show if not showing result)
-                    if (!showActualLocation) {
-                    Button(
-                        onClick = { 
-                            selectedLocation?.let { location ->
-                                viewModel.submitGuess(location)
-                                    showActualLocation = true
-                                    hasGuessedCurrentVideo = true
-                            }
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(16.dp),
-                        enabled = selectedLocation != null
-                    ) {
-                        Text("Submit Guess")
+                // Submit Guess Button (only show if not showing result)
+                if (!showActualLocation) {
+                Button(
+                    onClick = { 
+                        selectedLocation?.let { location ->
+                            viewModel.submitGuess(location)
+                                showActualLocation = true
+                                hasGuessedCurrentVideo = true
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp),
+                    enabled = selectedLocation != null
+                ) {
+                    Text("Submit Guess")
                         }
                     }
                 }
@@ -741,13 +759,13 @@ fun MainScreen(
         // Error message
         viewModel.error?.let { error ->
             Box(modifier = Modifier.fillMaxSize()) {
-                Snackbar(
-                    modifier = Modifier
+            Snackbar(
+                modifier = Modifier
                         .padding(16.dp)
                         .wrapContentSize()
-                        .align(Alignment.BottomCenter)
-                ) {
-                    Text(error)
+                    .align(Alignment.BottomCenter)
+            ) {
+                Text(error)
                 }
             }
         }

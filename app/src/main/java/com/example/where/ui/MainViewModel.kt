@@ -29,6 +29,9 @@ class MainViewModel @Inject constructor(
     private val auth: FirebaseAuth
 ) : ViewModel() {
 
+    private var _currentVideoUrl = mutableStateOf<Video?>(null)
+    val currentVideoUrl: Video? get() = _currentVideoUrl.value
+
     private var _currentVideo = mutableStateOf<Video?>(null)
     val currentVideo: Video? get() = _currentVideo.value
     
@@ -53,6 +56,9 @@ class MainViewModel @Inject constructor(
     private val _isLiked = mutableStateOf(false)
     val isLiked: Boolean get() = _isLiked.value
 
+    var showLikeAnimation by mutableStateOf(false)
+        private set
+
     // Comment-related state
     private val _comments = MutableStateFlow<List<Comment>>(emptyList())
     val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
@@ -69,11 +75,12 @@ class MainViewModel @Inject constructor(
     // Add a job to track the comments collection
     private var commentsJob: Job? = null
 
+    private val _currentLikeCount = mutableStateOf(0)
+    val currentLikeCount: Int get() = _currentLikeCount.value
+
     init {
         viewModelScope.launch {
             loadNextVideo()
-            // Initialize random likes for all videos
-            initializeRandomLikes()
         }
     }
 
@@ -83,14 +90,16 @@ class MainViewModel @Inject constructor(
             val video = videoRepository.getRandomVideo()
             if (_currentVideo.value == null) {
                 _currentVideo.value = video
+                _currentVideoUrl.value = video
             } else {
                 _nextVideo.value = video
             }
-            // Check if current user has liked this video
+            // Check if current user has liked this video and set initial like count
             video?.let { 
                 auth.currentUser?.uid?.let { userId ->
                     _isLiked.value = videoRepository.isVideoLiked(it.id, userId)
                 }
+                _currentLikeCount.value = it.likes
             }
         } catch (e: Exception) {
             Log.e("MainViewModel", "Error loading video: ${e.message}")
@@ -103,14 +112,16 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             val nextVideo = _nextVideo.value
             _currentVideo.value = nextVideo
+            _currentVideoUrl.value = nextVideo
             _nextVideo.value = null
             loadNextVideo()
             
-            // Reset like state for new video
+            // Reset like state and count for new video
             nextVideo?.let { video ->
                 auth.currentUser?.uid?.let { userId ->
                     _isLiked.value = videoRepository.isVideoLiked(video.id, userId)
                 }
+                _currentLikeCount.value = video.likes
             }
         }
     }
@@ -190,23 +201,22 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun initializeRandomLikes() {
-        viewModelScope.launch {
-            try {
-                videoRepository.addRandomLikesToExistingVideos()
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "Error initializing random likes: ${e.message}")
-                error = "Failed to initialize likes"
-            }
-        }
-    }
-
     // Format numbers (e.g., 1000 -> 1K)
     fun formatNumber(number: Int): String {
         return when {
             number >= 1_000_000 -> String.format("%.1fM", number / 1_000_000.0)
             number >= 1_000 -> String.format("%.1fK", number / 1_000.0)
             else -> number.toString()
+        }
+    }
+
+    // Overloaded function to handle String input
+    fun formatNumber(numberStr: String): String {
+        return try {
+            val number = numberStr.toInt()
+            formatNumber(number)
+        } catch (e: NumberFormatException) {
+            numberStr
         }
     }
 
@@ -217,10 +227,8 @@ class MainViewModel @Inject constructor(
                     auth.currentUser?.uid?.let { userId ->
                         val newLikeState = videoRepository.toggleLike(video.id, userId)
                         _isLiked.value = newLikeState
-                        // Update the current video's like count
-                        _currentVideo.value = video.copy(
-                            likes = video.likes + (if (newLikeState) 1 else -1)
-                        )
+                        // Update only the like count
+                        _currentLikeCount.value += if (newLikeState) 1 else -1
                     }
                 }
             } catch (e: Exception) {
@@ -310,6 +318,14 @@ class MainViewModel @Inject constructor(
                 error = "Failed to migrate comment counts"
             }
         }
+    }
+
+    fun showLikeAnimation() {
+        showLikeAnimation = true
+    }
+
+    fun hideLikeAnimation() {
+        showLikeAnimation = false
     }
 
     // Make sure to clean up when the ViewModel is cleared
