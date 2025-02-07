@@ -32,6 +32,18 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            
+            firebaseAppDistribution {
+                groups = "alpha-testers"
+                releaseNotes = "Alpha v1.0 - Initial testing release"
+            }
+        }
+        
+        debug {
+            firebaseAppDistribution {
+                groups = "internal-testers"
+                releaseNotes = "Debug build for internal testing"
+            }
         }
     }
     compileOptions {
