@@ -3,97 +3,174 @@ package com.example.where.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import androidx.compose.ui.input.key.*
 import com.example.where.data.model.Comment
 import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CommentDialog(
+fun CommentSheet(
     comments: List<Comment>,
     onDismiss: () -> Unit,
     onAddComment: (String) -> Unit,
     onDeleteComment: (String) -> Unit,
     currentUserId: String?,
-    isLoading: Boolean = false
+    isLoading: Boolean = false,
+    isVisible: Boolean
 ) {
-    var commentText by remember { mutableStateOf("") }
+    if (isVisible) {
+        var commentText by remember { mutableStateOf("") }
+        var isSending by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.fillMaxWidth(),
-        title = { Text("Comments") },
-        text = {
+        LaunchedEffect(isSending) {
+            if (isSending) {
+                try {
+                    onAddComment(commentText)
+                    commentText = ""
+                } finally {
+                    isSending = false
+                }
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = rememberModalBottomSheetState(),
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            windowInsets = WindowInsets(0)
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 400.dp)
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 16.dp)
+                    .imePadding()
             ) {
-                // Comments List
-                LazyColumn(
+                // Header
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(comments) { comment ->
-                        CommentItem(
-                            comment = comment,
-                            currentUserId = currentUserId,
-                            onDelete = { onDeleteComment(comment.id) }
-                        )
-                    }
+                    Text(
+                        text = "Comments",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${comments.size}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 // Comment Input
-                OutlinedTextField(
-                    value = commentText,
-                    onValueChange = { commentText = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    placeholder = { Text("Add a comment...") },
-                    trailingIcon = {
-                        IconButton(
-                            onClick = {
-                                if (commentText.isNotBlank()) {
-                                    onAddComment(commentText)
-                                    commentText = ""
-                                }
-                            },
-                            enabled = commentText.isNotBlank() && !isLoading
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    tonalElevation = 3.dp,
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = commentText,
+                            onValueChange = { commentText = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                                .onKeyEvent { event ->
+                                    if (event.key == Key.Enter && 
+                                        event.type == KeyEventType.KeyUp && 
+                                        commentText.isNotBlank() && 
+                                        !isSending) {
+                                        isSending = true
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                },
+                            placeholder = { Text("Add a comment...") },
+                            maxLines = 3,
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            ),
+                            singleLine = true
+                        )
+
+                        FilledIconButton(
+                            onClick = { if (commentText.isNotBlank()) isSending = true },
+                            enabled = commentText.isNotBlank() && !isSending
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = "Send"
+                            if (isSending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Send,
+                                    contentDescription = "Send"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Comments List with loading indicator
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                        reverseLayout = true
+                    ) {
+                        items(
+                            items = comments,
+                            key = { it.id }
+                        ) { comment ->
+                            CommentItem(
+                                comment = comment,
+                                currentUserId = currentUserId,
+                                onDelete = { onDeleteComment(comment.id) }
                             )
                         }
-                    },
-                    maxLines = 3
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
+                    }
+                }
             }
         }
-    )
+    }
 }
 
 @Composable

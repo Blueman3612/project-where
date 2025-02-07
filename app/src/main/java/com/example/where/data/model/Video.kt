@@ -17,7 +17,8 @@ data class Video(
     val authorUsername: String,
     val source: VideoSource,
     val likes: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val comments: Int = 0
 ) {
     fun toMap(): Map<String, Any> = mapOf(
         "id" to id,
@@ -33,7 +34,8 @@ data class Video(
         "authorUsername" to authorUsername,
         "source" to source.name,
         "likes" to likes,
-        "createdAt" to createdAt
+        "createdAt" to createdAt,
+        "comments" to comments
     ).filterValues { it != null }
 
     companion object {
@@ -93,7 +95,8 @@ data class Video(
                         VideoSource.PEXELS // Default to PEXELS if invalid
                     },
                     likes = (map["likes"] as? Number)?.toInt() ?: 0,
-                    createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                    createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+                    comments = (map["comments"] as? Number)?.toInt() ?: 0
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Error parsing video data: ${e.message}")

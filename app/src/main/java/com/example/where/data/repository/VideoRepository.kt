@@ -706,4 +706,52 @@ class VideoRepository @Inject constructor(
             }
         }
     }
+
+    suspend fun migrateVideoCommentCounts() {
+        try {
+            Log.d(TAG, "Starting comment count migration...")
+            // Get all videos
+            val videos = videosCollection.get().await()
+            Log.d(TAG, "Found ${videos.size()} videos to update")
+            
+            // For each video, count its comments and update the video document
+            videos.documents.forEach { videoDoc ->
+                try {
+                    val videoId = videoDoc.id
+                    
+                    // Count comments for this video
+                    val commentCount = firestore.collection("comments")
+                        .whereEqualTo("videoId", videoId)
+                        .count()
+                        .get(AggregateSource.SERVER)
+                        .await()
+                        .count
+                    
+                    // Update the video document with the comment count
+                    val updateData = mapOf("comments" to commentCount)
+                    videosCollection.document(videoId)
+                        .set(updateData, com.google.firebase.firestore.SetOptions.merge())
+                        .await()
+                    
+                    Log.d(TAG, "Updated video $videoId with $commentCount comments")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating comment count for video ${videoDoc.id}: ${e.message}")
+                }
+            }
+            Log.d(TAG, "Completed comment count migration for ${videos.size()} videos")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during comment count migration: ${e.message}")
+            throw e
+        }
+    }
+
+    suspend fun getVideo(videoId: String): Video? {
+        return try {
+            val doc = videosCollection.document(videoId).get().await()
+            doc.data?.let { Video.fromMap(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting video $videoId: ${e.message}")
+            null
+        }
+    }
 } 

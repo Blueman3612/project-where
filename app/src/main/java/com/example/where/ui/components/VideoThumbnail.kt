@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.*
@@ -105,6 +106,32 @@ fun VideoThumbnail(
                 )
                 Text(
                     text = formatCompactNumber(video.likes),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+
+        // Comments count overlay at bottom right
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(4.dp)
+                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Icon(
+                    Icons.Default.ChatBubbleOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = Color.White
+                )
+                Text(
+                    text = formatCompactNumber(video.comments),
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall
                 )

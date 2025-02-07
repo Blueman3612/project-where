@@ -55,7 +55,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.layout.offset
 import com.google.firebase.auth.FirebaseAuth
 import com.example.where.data.model.Comment
-import com.example.where.ui.components.CommentDialog
+import com.example.where.ui.components.CommentSheet
 import kotlin.math.roundToInt
 
 private const val TAG = "MainScreen"
@@ -514,7 +514,7 @@ fun MainScreen(
                                 ) {
                                     // Comments Count
                                     Text(
-                                        text = "${comments.size}",
+                                        text = viewModel.formatNumber(viewModel.commentCount),
                                         style = MaterialTheme.typography.titleMedium,
                                         color = Color.White,
                                         modifier = Modifier
@@ -549,16 +549,15 @@ fun MainScreen(
                 }
 
                 // Comment Dialog
-                if (showComments) {
-                    CommentDialog(
-                        comments = comments,
-                        onDismiss = { viewModel.toggleComments() },
-                        onAddComment = { viewModel.addComment(it) },
-                        onDeleteComment = { viewModel.deleteComment(it) },
-                        currentUserId = currentUserId,
-                        isLoading = isLoadingComments
-                    )
-                }
+                CommentSheet(
+                    comments = comments,
+                    onDismiss = { viewModel.toggleComments() },
+                    onAddComment = { viewModel.addComment(it) },
+                    onDeleteComment = { viewModel.deleteComment(it) },
+                    currentUserId = currentUserId,
+                    isLoading = isLoadingComments,
+                    isVisible = showComments
+                )
 
                 // Score Display overlay at bottom of video (keep this outside the animated overlay)
                 if (showActualLocation) {

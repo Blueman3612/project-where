@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.math.*
+import kotlinx.coroutines.Job
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -62,6 +63,12 @@ class MainViewModel @Inject constructor(
     private val _isLoadingComments = mutableStateOf(false)
     val isLoadingComments: Boolean get() = _isLoadingComments.value
 
+    // Use the video's comments field directly
+    val commentCount: Int get() = _currentVideo.value?.comments ?: 0
+
+    // Add a job to track the comments collection
+    private var commentsJob: Job? = null
+
     init {
         viewModelScope.launch {
             loadNextVideo()
@@ -94,14 +101,11 @@ class MainViewModel @Inject constructor(
 
     fun switchToNextVideo() {
         viewModelScope.launch {
-            // Store the next video temporarily
             val nextVideo = _nextVideo.value
-            // Set the current video directly to next video
             _currentVideo.value = nextVideo
-            // Clear only the next video
             _nextVideo.value = null
-            // Load the next video
             loadNextVideo()
+            
             // Reset like state for new video
             nextVideo?.let { video ->
                 auth.currentUser?.uid?.let { userId ->
@@ -230,6 +234,8 @@ class MainViewModel @Inject constructor(
         _showComments.value = !_showComments.value
         if (_showComments.value) {
             loadComments()
+        } else {
+            _comments.value = emptyList()
         }
     }
 
@@ -238,12 +244,14 @@ class MainViewModel @Inject constructor(
             viewModelScope.launch {
                 _isLoadingComments.value = true
                 try {
-                    commentRepository.getCommentsForVideo(video.id)
-                        .collect { commentsList ->
-                            _comments.value = commentsList
-                        }
+                    val commentsList = commentRepository.getCommentsForVideo(video.id)
+                    if (_showComments.value) {
+                        _comments.value = commentsList
+                    }
                 } catch (e: Exception) {
-                    error = "Failed to load comments: ${e.message}"
+                    if (_showComments.value) {
+                        error = "Failed to load comments: ${e.message}"
+                    }
                 } finally {
                     _isLoadingComments.value = false
                 }
@@ -253,13 +261,18 @@ class MainViewModel @Inject constructor(
 
     fun addComment(text: String) {
         currentVideo?.let { video ->
-            auth.currentUser?.uid?.let { userId ->
-                viewModelScope.launch {
-                    try {
-                        commentRepository.addComment(video.id, text)
-                    } catch (e: Exception) {
-                        error = "Failed to add comment: ${e.message}"
+            viewModelScope.launch {
+                try {
+                    val newComment = commentRepository.addComment(video.id, text)
+                    if (newComment == null) {
+                        error = "Failed to add comment"
+                    } else {
+                        _comments.value = listOf(newComment) + _comments.value
+                        // Update the current video with incremented comment count
+                        _currentVideo.value = video.copy(comments = video.comments + 1)
                     }
+                } catch (e: Exception) {
+                    error = "Failed to add comment: ${e.message}"
                 }
             }
         }
@@ -268,10 +281,43 @@ class MainViewModel @Inject constructor(
     fun deleteComment(commentId: String) {
         viewModelScope.launch {
             try {
-                commentRepository.deleteComment(commentId)
+                val success = commentRepository.deleteComment(commentId)
+                if (success) {
+                    _comments.value = _comments.value.filter { it.id != commentId }
+                    // Update the current video with decremented comment count
+                    currentVideo?.let { video ->
+                        _currentVideo.value = video.copy(comments = video.comments - 1)
+                    }
+                } else {
+                    error = "Failed to delete comment"
+                }
             } catch (e: Exception) {
                 error = "Failed to delete comment: ${e.message}"
             }
         }
+    }
+
+    fun migrateCommentCounts() {
+        viewModelScope.launch {
+            try {
+                videoRepository.migrateVideoCommentCounts()
+                // After migration, reload the current video to get updated count
+                currentVideo?.let { video ->
+                    _currentVideo.value = videoRepository.getVideo(video.id)
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error migrating comment counts: ${e.message}")
+                error = "Failed to migrate comment counts"
+            }
+        }
+    }
+
+    // Make sure to clean up when the ViewModel is cleared
+    override fun onCleared() {
+        super.onCleared()
+        commentsJob?.cancel()
+        commentsJob = null
+        _comments.value = emptyList()
+        error = null
     }
 } 

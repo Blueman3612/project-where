@@ -17,10 +17,10 @@ service cloud.firestore {
           // Allow video owner to update these fields
           (request.auth.uid == resource.data.authorId 
             && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['thumbnailUrl', 'likes']))
+                .hasOnly(['thumbnailUrl', 'likes', 'comments']))
           || 
-          // Allow any authenticated user to update likes
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+          // Allow any authenticated user to update likes or comments
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'comments'])
           ||
           // Allow any authenticated user to update authorUsername
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authorUsername'])
