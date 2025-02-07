@@ -41,6 +41,13 @@ fun ProfileScreen(
     onNavigateBack: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
+    // Clear any previous state when the screen is first composed
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearError()
+        }
+    }
+
     // Load the specified user's profile or current user if userId is null
     LaunchedEffect(userId) {
         viewModel.loadProfile(userId)

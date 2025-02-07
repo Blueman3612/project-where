@@ -52,12 +52,25 @@ class ProfileViewModel @Inject constructor(
     fun loadProfile(userId: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
+            _error.value = null
+            // Reset state before loading new profile
+            _user.value = null
+            _videos.value = emptyList()
+            _isFollowing.value = false
+            _followerCount.value = 0
+            _followingCount.value = 0
+            
             try {
                 val targetUserId = userId ?: auth.currentUser?.uid
                 if (targetUserId != null) {
-                    _user.value = userRepository.getUser(targetUserId)
+                    // Load user data first
+                    val userData = userRepository.getUser(targetUserId)
+                    _user.value = userData
+                    
+                    // Then load additional data
                     loadUserVideos(targetUserId)
                     loadFollowCounts(targetUserId)
+                    
                     // Check if current user is following this profile
                     if (userId != null && auth.currentUser != null) {
                         _isFollowing.value = userRepository.isFollowing(targetUserId)
@@ -80,7 +93,8 @@ class ProfileViewModel @Inject constructor(
                         _videos.value = emptyList()
                     }
                     .collect { videos ->
-                        _videos.value = videos
+                        // Sort videos by createdAt timestamp in descending order (newest first)
+                        _videos.value = videos.sortedByDescending { it.createdAt }
                     }
             } catch (e: Exception) {
                 _error.value = "Failed to load videos: ${e.message}"

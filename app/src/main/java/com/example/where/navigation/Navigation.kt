@@ -25,6 +25,7 @@ import com.example.where.ui.upload.UploadScreen
 import com.example.where.ui.auth.AuthScreen
 import com.example.where.ui.search.SearchScreen
 import com.example.where.ui.components.TopBar
+import com.example.where.ui.video.VideoScreen
 
 sealed class Screen(
     val route: String,
@@ -203,17 +204,30 @@ fun AppNavigation(
                             onNavigateToAuth = {
                                 navController.navigate(Screen.Auth.route)
                             },
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            }
+                        )
                     }
                 }
 
-                composable(Screen.Video.route) {
-                    // Video screen will be implemented later
-                    Box(modifier = Modifier) {
-                        Text("Video Player Coming Soon")
+                composable(
+                    route = Screen.Video.route,
+                    arguments = listOf(
+                        navArgument("videoId") { type = NavType.StringType }
+                    )
+                ) { backStackEntry ->
+                    val videoId = backStackEntry.arguments?.getString("videoId")
+                    if (videoId != null) {
+                        VideoScreen(
+                            videoId = videoId,
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            },
+                            onNavigateToProfile = { userId ->
+                                navController.navigate(Screen.UserProfile.createRoute(userId))
+                            }
+                        )
                     }
                 }
 

@@ -86,6 +86,21 @@ fun VideoThumbnail(
             }
         }
 
+        // Relative timestamp overlay at top right
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = formatRelativeTime(video.createdAt),
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+
         // Likes count overlay at bottom
         Box(
             modifier = Modifier
@@ -145,5 +160,21 @@ private fun formatCompactNumber(number: Int): String {
         number >= 1_000_000 -> String.format("%.1fM", number / 1_000_000.0)
         number >= 1_000 -> String.format("%.1fK", number / 1_000.0)
         else -> number.toString()
+    }
+}
+
+private fun formatRelativeTime(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+
+    return when {
+        diff < 60_000 -> "just now" // less than 1 minute
+        diff < 3600_000 -> "${diff / 60_000}m" // less than 1 hour
+        diff < 86400_000 -> "${diff / 3600_000}h" // less than 1 day
+        diff < 604800_000 -> "${diff / 86400_000}d" // less than 1 week
+        else -> {
+            val sdf = java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
+            sdf.format(java.util.Date(timestamp))
+        }
     }
 } 
