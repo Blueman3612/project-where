@@ -119,28 +119,16 @@ fun AppNavigation(
                         },
                         selected = selected,
                         onClick = {
-                            when (screen) {
-                                Screen.Search -> {
-                                    if (isInSearchSection) {
-                                        navController.popBackStack(Screen.Search.route, false)
-                                    } else {
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                }
-                                else -> {
-                                    navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
+                            // First pop any open screens
+                            if (navController.previousBackStackEntry != null) {
+                                navController.popBackStack()
+                            }
+
+                            // Then navigate to the selected screen
+                            if (currentRoute != screen.route) {
+                                navController.navigate(screen.route) {
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
                             }
                         },
