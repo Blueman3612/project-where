@@ -8,6 +8,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
+import androidx.navigation.compose.rememberNavController
 import com.example.where.auth.AuthScreen
 import com.example.where.auth.AuthViewModel
 import com.example.where.auth.GoogleSignInHandler
@@ -40,7 +41,8 @@ class MainActivity : ComponentActivity(), GoogleSignInHandler {
         setContent {
             MaterialTheme {
                 if (authViewModel.isAuthenticated) {
-                    AppNavigation()
+                    val navController = rememberNavController()
+                    AppNavigation(navController = navController)
                 } else {
                     AuthScreen(
                         onAuthSuccess = { /* State is handled by AuthViewModel */ }

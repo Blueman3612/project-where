@@ -27,6 +27,7 @@ class UserRepository @Inject constructor(
 ) {
     private val usersCollection = firestore.collection("users")
     private val userFollowsCollection = firestore.collection("userFollows")
+    private val conversationsCollection = firestore.collection("conversations")
 
     suspend fun getUser(userId: String): User? {
         return try {
@@ -297,6 +298,32 @@ class UserRepository @Inject constructor(
             )
             
             userFollowsCollection.document(followId).set(follow.toMap()).await()
+
+            // Check if target user follows current user
+            val reverseFollowId = "$targetUserId-$currentUserId"
+            val reverseFollow = userFollowsCollection.document(reverseFollowId).get().await()
+            
+            // If mutual follow, create a conversation
+            if (reverseFollow.exists()) {
+                val conversationId = "$currentUserId-$targetUserId".takeIf { it < "$targetUserId-$currentUserId" }
+                    ?: "$targetUserId-$currentUserId"
+                
+                // Check if conversation already exists
+                val existingConversation = conversationsCollection.document(conversationId).get().await()
+                if (!existingConversation.exists()) {
+                    val conversation = mapOf(
+                        "id" to conversationId,
+                        "participants" to listOf(currentUserId, targetUserId),
+                        "lastMessage" to null,
+                        "lastMessageTimestamp" to null,
+                        "lastMessageSenderId" to null,
+                        "isApproved" to true,
+                        "createdAt" to System.currentTimeMillis()
+                    )
+                    conversationsCollection.document(conversationId).set(conversation).await()
+                }
+            }
+            
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error following user: ${e.message}")
@@ -317,17 +344,21 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun isFollowing(targetUserId: String): Boolean {
-        val currentUserId = auth.currentUser?.uid ?: return false
-        
+    suspend fun isFollowing(followerId: String, followingId: String): Boolean {
         return try {
-            val followId = "$currentUserId-$targetUserId"
+            // Check both possible follow ID combinations
+            val followId = "$followerId-$followingId"
             val doc = userFollowsCollection.document(followId).get().await()
             doc.exists()
         } catch (e: Exception) {
             Log.e(TAG, "Error checking follow status: ${e.message}")
             false
         }
+    }
+
+    suspend fun isFollowing(userId: String): Boolean {
+        val currentUserId = auth.currentUser?.uid ?: return false
+        return isFollowing(currentUserId, userId)
     }
 
     suspend fun getFollowerCount(userId: String): Int {
@@ -357,6 +388,40 @@ class UserRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error getting following count: ${e.message}")
             0
+        }
+    }
+
+    suspend fun getConversation(conversationId: String): Map<String, Any>? {
+        return try {
+            val doc = conversationsCollection.document(conversationId).get().await()
+            doc.data
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting conversation: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun createConversation(participants: List<String>, isApproved: Boolean): String? {
+        return try {
+            // Create conversation ID based on participant IDs (sorted to ensure consistency)
+            val sortedParticipants = participants.sorted()
+            val conversationId = "${sortedParticipants[0]}-${sortedParticipants[1]}"
+            
+            val conversation = mapOf(
+                "id" to conversationId,
+                "participants" to participants,
+                "lastMessage" to null,
+                "lastMessageTimestamp" to null,
+                "lastMessageSenderId" to null,
+                "isApproved" to isApproved,
+                "createdAt" to System.currentTimeMillis()
+            )
+            
+            conversationsCollection.document(conversationId).set(conversation).await()
+            conversationId
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating conversation: ${e.message}")
+            null
         }
     }
 } 

@@ -31,34 +31,26 @@ import com.example.where.ui.components.LoadingSpinner
 import kotlinx.coroutines.launch
 import com.google.firebase.auth.FirebaseAuth
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Message
+import androidx.compose.foundation.border
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    userId: String? = null,
+    userId: String,
     onNavigateToVideo: (String) -> Unit,
     onNavigateToAuth: () -> Unit,
-    onNavigateBack: () -> Unit = {},
+    onNavigateBack: () -> Unit,
+    onNavigateToMessages: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
-    // Clear any previous state when the screen is first composed
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.clearError()
-        }
-    }
-
-    // Load the specified user's profile or current user if userId is null
-    LaunchedEffect(userId) {
-        viewModel.loadProfile(userId)
-    }
-
     val user by viewModel.user.collectAsState()
     val videos by viewModel.videos.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val isCurrentUser = userId == null || userId == FirebaseAuth.getInstance().currentUser?.uid
     val isFollowing by viewModel.isFollowing.collectAsState()
+    val isFollowedByUser by viewModel.isFollowedByUser.collectAsState()
     val followerCount by viewModel.followerCount.collectAsState()
     val followingCount by viewModel.followingCount.collectAsState()
     
@@ -73,6 +65,26 @@ fun ProfileScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         selectedImageUri = uri
+    }
+
+    val navigateToMessages by viewModel.navigateToMessages.collectAsState()
+
+    LaunchedEffect(userId) {
+        viewModel.loadProfile(userId)
+    }
+
+    LaunchedEffect(navigateToMessages) {
+        navigateToMessages?.let {
+            onNavigateToMessages()
+            viewModel.clearNavigateToMessages()
+        }
+    }
+
+    LaunchedEffect(error) {
+        error?.let {
+            // Handle error (e.g., show snackbar)
+            viewModel.clearError()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -180,13 +192,13 @@ fun ProfileScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
                         onClick = { viewModel.toggleFollow() },
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .weight(1f)
                             .height(40.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isFollowing) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary,
@@ -197,6 +209,24 @@ fun ProfileScreen(
                         } else null
                     ) {
                         Text(if (isFollowing) "Following" else "Follow")
+                    }
+
+                    // Only show message button if they follow each other
+                    if (isFollowing && isFollowedByUser) {
+                        IconButton(
+                            onClick = { viewModel.startConversation() },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surface)
+                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Message,
+                                contentDescription = "Message",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }

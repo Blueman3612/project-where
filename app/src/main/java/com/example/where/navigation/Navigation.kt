@@ -1,13 +1,6 @@
 package com.example.where.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
@@ -25,15 +18,16 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.where.ui.MainScreen
 import com.example.where.ui.profile.ProfileScreen
 import com.example.where.ui.upload.UploadScreen
 import com.example.where.ui.auth.AuthScreen
 import com.example.where.ui.search.SearchScreen
-import com.example.where.ui.components.TopBar
 import com.example.where.ui.video.VideoScreen
+import com.example.where.ui.messages.MessagesScreen
+import com.example.where.ui.components.TopBar
+import com.google.firebase.auth.FirebaseAuth
 
 sealed class Screen(
     val route: String,
@@ -45,8 +39,7 @@ sealed class Screen(
     object Create : Screen("create", "Create", Icons.Default.AddCircle)
     object Search : Screen("search", "Search", Icons.Default.Search)
     object Profile : Screen("profile", "Profile", Icons.Default.Person)
-    
-    // Other screens not in bottom nav
+    object Messages : Screen("messages", "Messages", Icons.Default.Message)
     object UserProfile : Screen("search/user/{userId}", "User Profile", Icons.Default.Person) {
         fun createRoute(userId: String) = "search/user/$userId"
     }
@@ -59,7 +52,7 @@ sealed class Screen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavigation(
-    navController: NavHostController = rememberNavController(),
+    navController: NavHostController,
     startDestination: String = Screen.Home.route
 ) {
     val bottomNavItems = listOf(
@@ -76,18 +69,36 @@ fun AppNavigation(
     // Determine if we're in the search section (either search or user profile)
     val isInSearchSection = currentRoute?.startsWith("search") ?: false
 
+    // State for tracking if we're in a conversation
+    var inConversation by remember { mutableStateOf(false) }
+    val isInMessages = currentRoute == Screen.Messages.route
+
+    // State for signaling conversation close
+    var shouldCloseConversation by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopBar(
                 canNavigateBack = navController.previousBackStackEntry != null,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = {
+                    android.util.Log.d("Navigation", "TopBar back pressed, isInMessages: $isInMessages, inConversation: $inConversation")
+                    if (isInMessages && inConversation) {
+                        // Signal to MessagesScreen to close the conversation
+                        android.util.Log.d("Navigation", "In messages and conversation, signaling to close conversation")
+                        shouldCloseConversation = true
+                    } else {
+                        android.util.Log.d("Navigation", "Not in messages or conversation, executing popBackStack")
+                        navController.popBackStack()
+                    }
+                },
+                onMessagesClick = { navController.navigate(Screen.Messages.route) }
             )
         },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp,
-                modifier = Modifier.height(56.dp) // Set fixed compact height
+                modifier = Modifier.height(56.dp)
             ) {
                 bottomNavItems.forEach { screen ->
                     val selected = when (screen) {
@@ -100,7 +111,7 @@ fun AppNavigation(
                                 imageVector = screen.icon,
                                 contentDescription = screen.title,
                                 modifier = if (screen == Screen.Create) {
-                                    Modifier.size(28.dp)  // Slightly smaller than before but still prominent
+                                    Modifier.size(28.dp)
                                 } else {
                                     Modifier.size(24.dp)
                                 }
@@ -110,7 +121,6 @@ fun AppNavigation(
                         onClick = {
                             when (screen) {
                                 Screen.Search -> {
-                                    // If already in search section, pop back to search
                                     if (isInSearchSection) {
                                         navController.popBackStack(Screen.Search.route, false)
                                     } else {
@@ -145,10 +155,10 @@ fun AppNavigation(
         }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues)) {
-    NavHost(
-        navController = navController,
-        startDestination = startDestination
-    ) {
+            NavHost(
+                navController = navController,
+                startDestination = startDestination
+            ) {
                 composable(Screen.Home.route) {
                     MainScreen(
                         onNavigateToProfile = { userId ->
@@ -237,8 +247,8 @@ fun AppNavigation(
                 
                 composable(Screen.Create.route) {
                     UploadScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
+                        onNavigateBack = {
+                            navController.popBackStack()
                         }
                     )
                 }
@@ -253,11 +263,18 @@ fun AppNavigation(
                 
                 composable(Screen.Profile.route) {
                     ProfileScreen(
+                        userId = FirebaseAuth.getInstance().currentUser?.uid ?: "",
                         onNavigateToVideo = { videoId ->
                             navController.navigate(Screen.Video.createRoute(videoId))
                         },
                         onNavigateToAuth = {
                             navController.navigate(Screen.Auth.route)
+                        },
+                        onNavigateBack = {
+                            navController.popBackStack()
+                        },
+                        onNavigateToMessages = {
+                            navController.navigate(Screen.Messages.route)
                         }
                     )
                 }
@@ -280,6 +297,9 @@ fun AppNavigation(
                             },
                             onNavigateBack = {
                                 navController.popBackStack()
+                            },
+                            onNavigateToMessages = {
+                                navController.navigate(Screen.Messages.route)
                             }
                         )
                     }
@@ -309,6 +329,39 @@ fun AppNavigation(
                     AuthScreen(
                         onNavigateBack = {
                             navController.popBackStack()
+                        }
+                    )
+                }
+
+                composable(Screen.Messages.route) {
+                    // Reset the close signal when leaving Messages screen
+                    DisposableEffect(Unit) {
+                        onDispose {
+                            shouldCloseConversation = false
+                            inConversation = false
+                        }
+                    }
+
+                    MessagesScreen(
+                        currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "",
+                        onNavigateBack = { isInConv -> 
+                            android.util.Log.d("Navigation", "MessagesScreen onNavigateBack called with inConversation: $isInConv")
+                            inConversation = isInConv
+                            if (!isInConv && !shouldCloseConversation) {  // Only navigate back if not closing conversation
+                                android.util.Log.d("Navigation", "Executing popBackStack because not in conversation")
+                                navController.popBackStack()
+                            } else {
+                                android.util.Log.d("Navigation", "In conversation, not executing popBackStack")
+                            }
+                        },
+                        onNavigateToProfile = { userId ->
+                            navController.navigate(Screen.UserProfile.createRoute(userId))
+                        },
+                        shouldCloseConversation = shouldCloseConversation,
+                        onConversationClosed = {
+                            android.util.Log.d("Navigation", "Conversation closed, resetting states")
+                            shouldCloseConversation = false
+                            inConversation = false  // Make sure to update the conversation state
                         }
                     )
                 }

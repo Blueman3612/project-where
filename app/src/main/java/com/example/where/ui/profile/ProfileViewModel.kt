@@ -39,14 +39,21 @@ class ProfileViewModel @Inject constructor(
     private val _isFollowing = MutableStateFlow(false)
     val isFollowing: StateFlow<Boolean> = _isFollowing.asStateFlow()
 
+    private val _isFollowedByUser = MutableStateFlow(false)
+    val isFollowedByUser: StateFlow<Boolean> = _isFollowedByUser.asStateFlow()
+
     private val _followerCount = MutableStateFlow(0)
     val followerCount: StateFlow<Int> = _followerCount.asStateFlow()
 
     private val _followingCount = MutableStateFlow(0)
     val followingCount: StateFlow<Int> = _followingCount.asStateFlow()
 
+    private val _navigateToMessages = MutableStateFlow<String?>(null)
+    val navigateToMessages = _navigateToMessages.asStateFlow()
+
     init {
-        loadProfile()
+        // Remove the default loadProfile() call from init
+        // We'll let the screen handle it with the correct user ID
     }
 
     fun loadProfile(userId: String? = null) {
@@ -57,27 +64,36 @@ class ProfileViewModel @Inject constructor(
             _user.value = null
             _videos.value = emptyList()
             _isFollowing.value = false
+            _isFollowedByUser.value = false
             _followerCount.value = 0
             _followingCount.value = 0
             
             try {
-                val targetUserId = userId ?: auth.currentUser?.uid
-                if (targetUserId != null) {
-                    // Load user data first
-                    val userData = userRepository.getUser(targetUserId)
-                    _user.value = userData
+                // Use the provided userId directly instead of falling back to current user
+                val targetUserId = userId ?: return@launch
+                Log.d("ProfileViewModel", "Loading profile for user: $targetUserId")
+                // Load user data first
+                val userData = userRepository.getUser(targetUserId)
+                _user.value = userData
+                
+                // Then load additional data
+                loadUserVideos(targetUserId)
+                loadFollowCounts(targetUserId)
+                
+                // Check follow relationships if viewing another user's profile
+                if (targetUserId != auth.currentUser?.uid && auth.currentUser != null) {
+                    val currentUserId = auth.currentUser!!.uid
+                    Log.d("ProfileViewModel", "Checking follow status - Current user: $currentUserId, Target user: $targetUserId")
                     
-                    // Then load additional data
-                    loadUserVideos(targetUserId)
-                    loadFollowCounts(targetUserId)
+                    _isFollowing.value = userRepository.isFollowing(currentUserId, targetUserId)
+                    Log.d("ProfileViewModel", "Current user following target: ${_isFollowing.value}")
                     
-                    // Check if current user is following this profile
-                    if (userId != null && auth.currentUser != null) {
-                        _isFollowing.value = userRepository.isFollowing(targetUserId)
-                    }
+                    _isFollowedByUser.value = userRepository.isFollowing(targetUserId, currentUserId)
+                    Log.d("ProfileViewModel", "Target user following current: ${_isFollowedByUser.value}")
                 }
             } catch (e: Exception) {
                 _error.value = "Failed to load profile: ${e.message}"
+                Log.e("ProfileViewModel", "Error loading profile", e)
             } finally {
                 _isLoading.value = false
             }
@@ -164,5 +180,37 @@ class ProfileViewModel @Inject constructor(
 
     fun clearError() {
         _error.value = null
+    }
+
+    fun startConversation() {
+        viewModelScope.launch {
+            try {
+                val currentUserId = auth.currentUser?.uid ?: return@launch
+                val targetUserId = user.value?.id ?: return@launch
+
+                // Create conversation ID (consistent ordering for both users)
+                val conversationId = "$currentUserId-$targetUserId".takeIf { it < "$targetUserId-$currentUserId" }
+                    ?: "$targetUserId-$currentUserId"
+
+                // Check if conversation already exists
+                val existingConversation = userRepository.getConversation(conversationId)
+                if (existingConversation == null) {
+                    // Create new conversation
+                    userRepository.createConversation(
+                        participants = listOf(currentUserId, targetUserId),
+                        isApproved = true // Auto-approve since they follow each other
+                    )
+                }
+
+                // Navigate to messages screen
+                _navigateToMessages.value = conversationId
+            } catch (e: Exception) {
+                _error.value = "Failed to start conversation: ${e.message}"
+            }
+        }
+    }
+
+    fun clearNavigateToMessages() {
+        _navigateToMessages.value = null
     }
 } 
