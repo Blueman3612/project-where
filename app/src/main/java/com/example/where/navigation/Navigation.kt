@@ -53,7 +53,9 @@ sealed class Screen(
 @Composable
 fun AppNavigation(
     navController: NavHostController,
-    startDestination: String = Screen.Home.route
+    startDestination: String = Screen.Home.route,
+    isDarkMode: Boolean = false,
+    onThemeToggle: () -> Unit = {}
 ) {
     val bottomNavItems = listOf(
         Screen.Home,
@@ -258,12 +260,12 @@ fun AppNavigation(
                         onNavigateToAuth = {
                             navController.navigate(Screen.Auth.route)
                         },
-                        onNavigateBack = {
-                            navController.popBackStack()
-                        },
+                        onNavigateBack = { _ -> navController.popBackStack() },
                         onNavigateToMessages = {
                             navController.navigate(Screen.Messages.route)
-                        }
+                        },
+                        isDarkMode = isDarkMode,
+                        onThemeToggle = { checked -> onThemeToggle() }
                     )
                 }
 
@@ -283,12 +285,12 @@ fun AppNavigation(
                             onNavigateToAuth = {
                                 navController.navigate(Screen.Auth.route)
                             },
-                            onNavigateBack = {
-                                navController.popBackStack()
-                            },
+                            onNavigateBack = { _ -> navController.popBackStack() },
                             onNavigateToMessages = {
                                 navController.navigate(Screen.Messages.route)
-                            }
+                            },
+                            isDarkMode = isDarkMode,
+                            onThemeToggle = { checked -> onThemeToggle() }
                         )
                     }
                 }

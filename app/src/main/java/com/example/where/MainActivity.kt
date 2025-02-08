@@ -8,11 +8,15 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.*
 import androidx.navigation.compose.rememberNavController
 import com.example.where.auth.AuthScreen
 import com.example.where.auth.AuthViewModel
 import com.example.where.auth.GoogleSignInHandler
 import com.example.where.navigation.AppNavigation
+import com.example.where.ui.theme.WhereTheme
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import dagger.hilt.android.AndroidEntryPoint
@@ -39,10 +43,19 @@ class MainActivity : ComponentActivity(), GoogleSignInHandler {
         }
 
         setContent {
-            MaterialTheme {
+            var isDarkMode by remember { mutableStateOf(false) }
+
+            WhereTheme(
+                darkTheme = isDarkMode,
+                onThemeUpdated = { isDarkMode = it }
+            ) {
                 if (authViewModel.isAuthenticated) {
                     val navController = rememberNavController()
-                    AppNavigation(navController = navController)
+                    AppNavigation(
+                        navController = navController,
+                        isDarkMode = isDarkMode,
+                        onThemeToggle = { isDarkMode = !isDarkMode }
+                    )
                 } else {
                     AuthScreen(
                         onAuthSuccess = { /* State is handled by AuthViewModel */ }

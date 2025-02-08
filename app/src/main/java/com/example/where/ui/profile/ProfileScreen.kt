@@ -40,8 +40,10 @@ fun ProfileScreen(
     userId: String,
     onNavigateToVideo: (String) -> Unit,
     onNavigateToAuth: () -> Unit,
-    onNavigateBack: () -> Unit,
+    onNavigateBack: (Boolean) -> Unit,
     onNavigateToMessages: () -> Unit,
+    isDarkMode: Boolean = false,
+    onThemeToggle: (Boolean) -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val user by viewModel.user.collectAsState()
@@ -159,14 +161,14 @@ fun ProfileScreen(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Edit Button
+                        // Settings Button
                         IconButton(
                             onClick = {
                                 showEditDialog = true
                                 tempBio = user?.bio ?: ""
                             }
                         ) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
                         }
                         
                         // Sign Out Button
@@ -174,6 +176,7 @@ fun ProfileScreen(
                             onClick = {
                                 FirebaseAuth.getInstance().signOut()
                                 onNavigateToAuth()
+                                onNavigateBack(false)
                             }
                         ) {
                             Icon(
@@ -295,18 +298,44 @@ fun ProfileScreen(
         }
     }
     
-    // Edit Profile Dialog
+    // Settings Dialog
     if (showEditDialog) {
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
-            title = { Text("Edit Profile") },
+            title = { Text("Settings") },
             text = {
-                OutlinedTextField(
-                    value = tempBio,
-                    onValueChange = { tempBio = it },
-                    label = { Text("Bio") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Bio Field
+                    OutlinedTextField(
+                        value = tempBio,
+                        onValueChange = { tempBio = it },
+                        label = { Text("Bio") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    // Theme Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Dark Mode")
+                        Switch(
+                            checked = isDarkMode,
+                            onCheckedChange = onThemeToggle,
+                            thumbContent = {
+                                Icon(
+                                    imageVector = if (isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(SwitchDefaults.IconSize)
+                                )
+                            }
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
