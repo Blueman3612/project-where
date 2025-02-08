@@ -68,19 +68,42 @@ class MessageRepository @Inject constructor(
     }
 
     fun getMessages(conversationId: String): Flow<List<Message>> = callbackFlow {
+        Log.d(TAG, "Starting to listen for messages in conversation: $conversationId")
+        
         val listener = firestore.collection("messages")
             .whereEqualTo("conversationId", conversationId)
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) {
+                    Log.e(TAG, "Error listening to messages", e)
                     return@addSnapshotListener
                 }
-                val messages = snapshot?.documents?.mapNotNull { doc ->
-                    Message.fromMap(doc.data ?: return@mapNotNull null)
-                } ?: emptyList()
+                
+                if (snapshot == null) {
+                    Log.d(TAG, "No messages snapshot")
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                
+                val messages = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        Message.fromMap(doc.data ?: return@mapNotNull null)?.also { message ->
+                            Log.d(TAG, "Received message: ${message.id}, read: ${message.read}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing message ${doc.id}", e)
+                        null
+                    }
+                }
+                
+                Log.d(TAG, "Sending ${messages.size} messages to UI")
                 trySend(messages)
             }
-        awaitClose { listener.remove() }
+            
+        awaitClose { 
+            Log.d(TAG, "Stopping message listener for conversation: $conversationId")
+            listener.remove() 
+        }
     }
 
     suspend fun sendMessage(message: Message) {
@@ -112,17 +135,81 @@ class MessageRepository @Inject constructor(
     }
 
     suspend fun markMessagesAsRead(conversationId: String, userId: String) {
-        val batch = firestore.batch()
-        val messages = firestore.collection("messages")
-            .whereEqualTo("conversationId", conversationId)
-            .whereNotEqualTo("senderId", userId)
-            .whereEqualTo("read", false)
-            .get()
-            .await()
+        try {
+            Log.d(TAG, "Starting markMessagesAsRead for conversation: $conversationId, user: $userId")
+            
+            // First verify the user is a participant in the conversation
+            val conversation = firestore.collection("conversations")
+                .document(conversationId)
+                .get()
+                .await()
 
-        messages.documents.forEach { doc ->
-            batch.update(doc.reference, "read", true)
+            val participants = conversation.data?.get("participants") as? List<*>
+            if (!conversation.exists() || participants?.contains(userId) != true) {
+                Log.e(TAG, "User $userId is not a participant in conversation $conversationId")
+                return
+            }
+            Log.d(TAG, "Verified user $userId is a participant in conversation")
+
+            // Get messages not sent by the current user
+            val messages = firestore.collection("messages")
+                .whereEqualTo("conversationId", conversationId)
+                .whereNotEqualTo("senderId", userId)
+                .get()
+                .await()
+
+            val unreadCount = messages.documents.count { doc ->
+                !(doc.getBoolean("read") ?: false)
+            }
+            Log.d(TAG, "Found ${messages.size()} total messages, $unreadCount unread")
+            
+            // Update each message individually
+            val currentTime = System.currentTimeMillis()
+            var updatedCount = 0
+            messages.documents.forEach { doc ->
+                try {
+                    val messageData = doc.data
+                    val isRead = messageData?.get("read") as? Boolean ?: false
+                    val readBy = messageData?.get("readBy") as? String
+                    
+                    if (!isRead || readBy == null) {
+                        Log.d(TAG, "Updating message ${doc.id} - Current read: $isRead, readBy: $readBy")
+                        val updates = mapOf(
+                            "read" to true,
+                            "readAt" to currentTime,
+                            "readBy" to userId
+                        )
+                        doc.reference.update(updates).await()
+                        updatedCount++
+                        Log.d(TAG, "Successfully updated message ${doc.id}")
+                    } else {
+                        Log.d(TAG, "Skipping message ${doc.id} - already read by $readBy")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating message ${doc.id}", e)
+                }
+            }
+
+            // Update conversation's last read status
+            if (updatedCount > 0) {
+                try {
+                    Log.d(TAG, "Updating conversation last read status")
+                    firestore.collection("conversations").document(conversationId)
+                        .update(
+                            mapOf(
+                                "lastReadAt" to currentTime,
+                                "lastReadBy" to userId
+                            )
+                        ).await()
+                    Log.d(TAG, "Successfully updated conversation read status")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating conversation read status", e)
+                }
+            }
+            
+            Log.d(TAG, "Completed markMessagesAsRead - Updated $updatedCount messages")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in markMessagesAsRead", e)
         }
-        batch.commit().await()
     }
 } 

@@ -80,7 +80,7 @@ service cloud.firestore {
                    request.auth.uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participants;
       allow update: if request.auth != null &&
                    request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants &&
-                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt', 'readBy']);
     }
   }
 } 

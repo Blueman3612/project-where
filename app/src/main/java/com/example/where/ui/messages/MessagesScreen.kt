@@ -10,15 +10,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -248,6 +250,23 @@ private fun ChatScreen(
     val otherParticipantId = conversation.participants.first { it != currentUserId }
     val otherParticipantName = usernames[otherParticipantId] ?: "Unknown User"
 
+    // Mark messages as read when viewed
+    LaunchedEffect(Unit) {
+        Log.d("ChatScreen", "Chat opened, marking messages as read for conversation: ${conversation.id}")
+        viewModel.markMessagesAsRead(conversation.id, currentUserId)
+    }
+
+    // Also mark messages as read when new messages arrive
+    LaunchedEffect(messages) {
+        if (messages.isNotEmpty()) {
+            val unreadMessages = messages.any { !it.read && it.senderId != currentUserId }
+            if (unreadMessages) {
+                Log.d("ChatScreen", "New unread messages detected, marking as read")
+                viewModel.markMessagesAsRead(conversation.id, currentUserId)
+            }
+        }
+    }
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -333,6 +352,18 @@ private fun ChatScreen(
                     colors = TextFieldDefaults.colors(
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                         focusedContainerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Send
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (messageText.isNotBlank()) {
+                                onSendMessage(messageText)
+                                messageText = ""
+                            }
+                        }
                     )
                 )
                 
@@ -390,15 +421,32 @@ private fun MessageBubble(
                     style = MaterialTheme.typography.bodyLarge
                 )
                 
-                Text(
-                    text = dateFormat.format(Date(message.timestamp)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isCurrentUser) 
-                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f) 
-                    else 
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.align(Alignment.End)
-                )
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = dateFormat.format(Date(message.timestamp)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isCurrentUser) 
+                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f) 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                    
+                    if (isCurrentUser) {
+                        Icon(
+                            imageVector = if (message.readBy != null) Icons.Default.DoneAll else Icons.Default.Done,
+                            contentDescription = if (message.readBy != null) "Read" else "Sent",
+                            modifier = Modifier.size(14.dp),
+                            tint = if (message.readBy != null)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        )
+                    }
+                }
             }
         }
     }
