@@ -25,13 +25,19 @@ data class Comment(
     companion object {
         fun fromMap(map: Map<String, Any>): Comment? {
             return try {
+                val timestamp = when (val timestampValue = map["timestamp"]) {
+                    is com.google.firebase.Timestamp -> timestampValue.toDate().time
+                    is Number -> timestampValue.toLong()
+                    else -> System.currentTimeMillis()
+                }
+
                 Comment(
                     id = map["id"] as String,
                     videoId = map["videoId"] as String,
                     authorId = map["authorId"] as String,
                     authorUsername = map["authorUsername"] as String,
                     text = map["text"] as String,
-                    timestamp = (map["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+                    timestamp = timestamp,
                     likes = (map["likes"] as? Number)?.toInt() ?: 0,
                     parentId = map["parentId"] as? String,
                     replyCount = (map["replyCount"] as? Number)?.toInt() ?: 0

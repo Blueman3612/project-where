@@ -301,8 +301,6 @@ class MainViewModel @Inject constructor(
                         if (parentId == null) {
                             // Add top-level comment
                             _comments.value = listOf(newComment) + _comments.value
-                            // Update the current video with incremented comment count
-                            _currentVideo.value = video.copy(comments = video.comments + 1)
                         } else {
                             // Add reply to existing comment
                             val parentComment = _comments.value.find { it.id == parentId }
@@ -319,6 +317,8 @@ class MainViewModel @Inject constructor(
                                 }
                             }
                         }
+                        // Always update the video's comment count for both comments and replies
+                        _currentVideo.value = video.copy(comments = video.comments + 1)
                     }
                 } catch (e: Exception) {
                     error = "Failed to add comment: ${e.message}"
@@ -332,10 +332,18 @@ class MainViewModel @Inject constructor(
             try {
                 val success = commentRepository.deleteComment(commentId)
                 if (success) {
+                    // Find if this is a top-level comment
+                    val isTopLevel = _comments.value.any { it.id == commentId }
+                    val deletedComment = _comments.value.find { it.id == commentId }
+                    val replyCount = deletedComment?.replyCount ?: 0
+                    
                     _comments.value = _comments.value.filter { it.id != commentId }
+                    
                     // Update the current video with decremented comment count
+                    // If it's a top-level comment, also account for its replies
                     currentVideo?.let { video ->
-                        _currentVideo.value = video.copy(comments = video.comments - 1)
+                        val decrementAmount = if (isTopLevel) 1 + replyCount else 1
+                        _currentVideo.value = video.copy(comments = video.comments - decrementAmount)
                     }
                 } else {
                     error = "Failed to delete comment"

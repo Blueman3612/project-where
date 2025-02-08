@@ -64,12 +64,10 @@ class CommentRepository @Inject constructor(
                         com.google.firebase.firestore.FieldValue.increment(1))
                 }
                 
-                // If this is a top-level comment, increment the video's comment count
-                if (parentId == null) {
-                    val videoRef = videosCollection.document(videoId)
-                    transaction.update(videoRef, "comments", 
-                        com.google.firebase.firestore.FieldValue.increment(1))
-                }
+                // Always increment the video's comment count, regardless of whether it's a reply or top-level comment
+                val videoRef = videosCollection.document(videoId)
+                transaction.update(videoRef, "comments", 
+                    com.google.firebase.firestore.FieldValue.increment(1))
             }.await()
 
             // Create local comment object with current time for immediate display
@@ -232,21 +230,22 @@ class CommentRepository @Inject constructor(
                             com.google.firebase.firestore.FieldValue.increment(-1))
                     }
                     
-                    // If this is a top-level comment, decrement the video's comment count
-                    if (parentId == null) {
-                        val videoRef = videosCollection.document(videoId)
-                        transaction.update(videoRef, "comments", 
-                            com.google.firebase.firestore.FieldValue.increment(-1))
-                    }
+                    // Always decrement the video's comment count
+                    val videoRef = videosCollection.document(videoId)
+                    transaction.update(videoRef, "comments", 
+                        com.google.firebase.firestore.FieldValue.increment(-1))
                     
                     // Delete all likes for this comment
                     likes.documents.forEach { likeDoc ->
                         transaction.delete(likeDoc.reference)
                     }
                     
-                    // Delete all replies if this is a top-level comment
+                    // If this is a top-level comment, delete all replies and decrement video comment count for each reply
                     replies?.documents?.forEach { replyDoc ->
                         transaction.delete(replyDoc.reference)
+                        // Decrement video comment count for each reply being deleted
+                        transaction.update(videoRef, "comments",
+                            com.google.firebase.firestore.FieldValue.increment(-1))
                     }
                 }.await()
                 

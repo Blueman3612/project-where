@@ -83,12 +83,6 @@ fun CommentSheet(
                         IconButton(onClick = { replyingTo = null }) {
                             Icon(Icons.Default.Close, "Cancel Reply")
                         }
-                    } else {
-                        Text(
-                            text = "${comments.size}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
 
