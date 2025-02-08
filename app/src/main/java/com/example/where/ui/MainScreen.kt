@@ -114,6 +114,8 @@ fun MainScreen(
     val showComments by remember { derivedStateOf { viewModel.showComments } }
     val isLoadingComments by remember { derivedStateOf { viewModel.isLoadingComments } }
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid }
+    val commentLikes by viewModel.commentLikes.collectAsStateWithLifecycle()
+    val commentReplies by viewModel.commentReplies.collectAsStateWithLifecycle()
     
     // Track composition memory usage
     SideEffect {
@@ -589,15 +591,19 @@ fun MainScreen(
                 }
 
                 // Comment Dialog
-                    CommentSheet(
-                        comments = comments,
-                        onDismiss = { viewModel.toggleComments() },
-                        onAddComment = { viewModel.addComment(it) },
-                        onDeleteComment = { viewModel.deleteComment(it) },
-                        currentUserId = currentUserId,
-                        isLoading = isLoadingComments,
-                        isVisible = showComments
-                    )
+                CommentSheet(
+                    comments = comments,
+                    onDismiss = { viewModel.toggleComments() },
+                    onAddComment = { text, parentId -> viewModel.addComment(text, parentId) },
+                    onDeleteComment = { commentId -> viewModel.deleteComment(commentId) },
+                    onLikeComment = { commentId -> viewModel.toggleCommentLike(commentId) },
+                    onLoadReplies = { commentId -> viewModel.loadReplies(commentId) },
+                    currentUserId = currentUserId,
+                    isLoading = isLoadingComments,
+                    isVisible = showComments,
+                    commentLikes = commentLikes,
+                    commentReplies = commentReplies
+                )
 
                 // Score Display overlay at bottom of video (keep this outside the animated overlay)
                 if (showActualLocation) {

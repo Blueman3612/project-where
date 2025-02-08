@@ -16,27 +16,34 @@ import androidx.compose.ui.input.key.*
 import com.example.where.data.model.Comment
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.foundation.clickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommentSheet(
     comments: List<Comment>,
     onDismiss: () -> Unit,
-    onAddComment: (String) -> Unit,
+    onAddComment: (String, String?) -> Unit,
     onDeleteComment: (String) -> Unit,
+    onLikeComment: (String) -> Unit,
+    onLoadReplies: (String) -> Unit,
     currentUserId: String?,
     isLoading: Boolean = false,
-    isVisible: Boolean
+    isVisible: Boolean,
+    commentLikes: Map<String, Boolean> = emptyMap(),
+    commentReplies: Map<String, List<Comment>> = emptyMap()
 ) {
     if (isVisible) {
         var commentText by remember { mutableStateOf("") }
         var isSending by remember { mutableStateOf(false) }
+        var replyingTo by remember { mutableStateOf<Comment?>(null) }
 
         LaunchedEffect(isSending) {
             if (isSending) {
                 try {
-                    onAddComment(commentText)
+                    onAddComment(commentText, replyingTo?.id)
                     commentText = ""
+                    replyingTo = null
                 } finally {
                     isSending = false
                 }
@@ -68,15 +75,21 @@ fun CommentSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Comments",
+                        text = if (replyingTo != null) "Reply to ${replyingTo?.authorUsername}" else "Comments",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "${comments.size}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (replyingTo != null) {
+                        IconButton(onClick = { replyingTo = null }) {
+                            Icon(Icons.Default.Close, "Cancel Reply")
+                        }
+                    } else {
+                        Text(
+                            text = "${comments.size}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 // Comment Input
@@ -108,7 +121,9 @@ fun CommentSheet(
                                         false
                                     }
                                 },
-                            placeholder = { Text("Add a comment...") },
+                            placeholder = { 
+                                Text(if (replyingTo != null) "Write a reply..." else "Add a comment...") 
+                            },
                             maxLines = 3,
                             colors = TextFieldDefaults.outlinedTextFieldColors(
                                 containerColor = MaterialTheme.colorScheme.surface,
@@ -163,7 +178,12 @@ fun CommentSheet(
                             CommentItem(
                                 comment = comment,
                                 currentUserId = currentUserId,
-                                onDelete = { onDeleteComment(comment.id) }
+                                onDelete = { onDeleteComment(comment.id) },
+                                onLike = { onLikeComment(comment.id) },
+                                onReply = { replyingTo = comment },
+                                onLoadReplies = { onLoadReplies(comment.id) },
+                                isLiked = commentLikes[comment.id] ?: false,
+                                replies = commentReplies[comment.id] ?: emptyList()
                             )
                         }
                     }
@@ -177,49 +197,133 @@ fun CommentSheet(
 private fun CommentItem(
     comment: Comment,
     currentUserId: String?,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onLike: () -> Unit,
+    onReply: () -> Unit,
+    onLoadReplies: () -> Unit,
+    isLiked: Boolean,
+    replies: List<Comment>,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = comment.authorUsername,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = formatTimestamp(comment.timestamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Text(
-                    text = comment.authorUsername,
+                    text = comment.text,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    modifier = Modifier.padding(top = 4.dp)
                 )
-                Text(
-                    text = formatTimestamp(comment.timestamp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                
+                // Action buttons
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Like button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.clickable { onLike() }
+                    ) {
+                        Icon(
+                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = if (isLiked) "Unlike" else "Like",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (comment.likes > 0) {
+                            Text(
+                                text = comment.likes.toString(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    // Reply button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.clickable { onReply() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Reply,
+                            contentDescription = "Reply",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Reply",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
-            Text(
-                text = comment.text,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
 
-        // Delete button for user's own comments
-        if (currentUserId == comment.authorId) {
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete comment",
-                    tint = MaterialTheme.colorScheme.error
-                )
+            // Delete button for user's own comments
+            if (currentUserId == comment.authorId) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete comment",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+        
+        // Show replies or "View replies" button
+        if (comment.replyCount > 0) {
+            if (replies.isEmpty()) {
+                TextButton(
+                    onClick = onLoadReplies,
+                    modifier = Modifier.padding(start = 16.dp)
+                ) {
+                    Text("View ${comment.replyCount} ${if (comment.replyCount == 1) "reply" else "replies"}")
+                }
+            } else {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    replies.forEach { reply ->
+                        CommentItem(
+                            comment = reply,
+                            currentUserId = currentUserId,
+                            onDelete = onDelete,
+                            onLike = { onLike() },
+                            onReply = { onReply() },
+                            onLoadReplies = { /* Nested replies not supported */ },
+                            isLiked = false,
+                            replies = emptyList()
+                        )
+                    }
+                }
             }
         }
     }

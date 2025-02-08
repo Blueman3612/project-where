@@ -63,6 +63,12 @@ class MainViewModel @Inject constructor(
     private val _comments = MutableStateFlow<List<Comment>>(emptyList())
     val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
 
+    private val _commentLikes = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val commentLikes: StateFlow<Map<String, Boolean>> = _commentLikes.asStateFlow()
+
+    private val _commentReplies = MutableStateFlow<Map<String, List<Comment>>>(emptyMap())
+    val commentReplies: StateFlow<Map<String, List<Comment>>> = _commentReplies.asStateFlow()
+
     private val _showComments = mutableStateOf(false)
     val showComments: Boolean get() = _showComments.value
 
@@ -244,40 +250,75 @@ class MainViewModel @Inject constructor(
             loadComments()
         } else {
             _comments.value = emptyList()
+            _commentLikes.value = emptyMap()
+            _commentReplies.value = emptyMap()
         }
     }
 
     private fun loadComments() {
         currentVideo?.let { video ->
+            Log.d("MainViewModel", "Loading comments for video: ${video.id}, current comment count: ${video.comments}")
             viewModelScope.launch {
                 _isLoadingComments.value = true
                 try {
+                    Log.d("MainViewModel", "Calling commentRepository.getCommentsForVideo")
                     val commentsList = commentRepository.getCommentsForVideo(video.id)
-                    if (_showComments.value) {
-                        _comments.value = commentsList
+                    Log.d("MainViewModel", "Loaded ${commentsList.size} comments")
+                    
+                    if (commentsList.isEmpty()) {
+                        Log.d("MainViewModel", "No comments returned from repository")
+                    } else {
+                        Log.d("MainViewModel", "First comment: ${commentsList.first()}")
                     }
+                    
+                    _comments.value = commentsList
+                    
+                    // Load like states for all comments
+                    Log.d("MainViewModel", "Loading like states for comments")
+                    val likeStates = commentsList.associate { comment ->
+                        comment.id to commentRepository.isCommentLiked(comment.id)
+                    }
+                    Log.d("MainViewModel", "Loaded ${likeStates.size} like states")
+                    _commentLikes.value = likeStates
                 } catch (e: Exception) {
-                    if (_showComments.value) {
-                        error = "Failed to load comments: ${e.message}"
-                    }
+                    Log.e("MainViewModel", "Error loading comments: ${e.message}", e)
+                    error = "Failed to load comments: ${e.message}"
                 } finally {
                     _isLoadingComments.value = false
                 }
             }
-        }
+        } ?: Log.e("MainViewModel", "No current video when trying to load comments")
     }
 
-    fun addComment(text: String) {
+    fun addComment(text: String, parentId: String? = null) {
         currentVideo?.let { video ->
             viewModelScope.launch {
                 try {
-                    val newComment = commentRepository.addComment(video.id, text)
+                    val newComment = commentRepository.addComment(video.id, text, parentId)
                     if (newComment == null) {
                         error = "Failed to add comment"
                     } else {
-                        _comments.value = listOf(newComment) + _comments.value
-                        // Update the current video with incremented comment count
-                        _currentVideo.value = video.copy(comments = video.comments + 1)
+                        if (parentId == null) {
+                            // Add top-level comment
+                            _comments.value = listOf(newComment) + _comments.value
+                            // Update the current video with incremented comment count
+                            _currentVideo.value = video.copy(comments = video.comments + 1)
+                        } else {
+                            // Add reply to existing comment
+                            val parentComment = _comments.value.find { it.id == parentId }
+                            parentComment?.let {
+                                val currentReplies = _commentReplies.value[parentId] ?: emptyList()
+                                _commentReplies.value = _commentReplies.value + (parentId to (listOf(newComment) + currentReplies))
+                                // Update the parent comment in the list with incremented reply count
+                                _comments.value = _comments.value.map { comment ->
+                                    if (comment.id == parentId) {
+                                        comment.copy(replyCount = comment.replyCount + 1)
+                                    } else {
+                                        comment
+                                    }
+                                }
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     error = "Failed to add comment: ${e.message}"
@@ -326,6 +367,52 @@ class MainViewModel @Inject constructor(
 
     fun hideLikeAnimation() {
         showLikeAnimation = false
+    }
+
+    fun toggleCommentLike(commentId: String) {
+        viewModelScope.launch {
+            try {
+                val newLikeState = commentRepository.toggleLike(commentId)
+                // Update the like state
+                _commentLikes.value = _commentLikes.value + (commentId to newLikeState)
+                // Update the comment's like count
+                _comments.value = _comments.value.map { comment ->
+                    if (comment.id == commentId) {
+                        comment.copy(likes = comment.likes + if (newLikeState) 1 else -1)
+                    } else {
+                        comment
+                    }
+                }
+                // Also update replies if necessary
+                _commentReplies.value = _commentReplies.value.mapValues { (_, replies) ->
+                    replies.map { reply ->
+                        if (reply.id == commentId) {
+                            reply.copy(likes = reply.likes + if (newLikeState) 1 else -1)
+                        } else {
+                            reply
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                error = "Failed to update like: ${e.message}"
+            }
+        }
+    }
+
+    fun loadReplies(commentId: String) {
+        viewModelScope.launch {
+            try {
+                val replies = commentRepository.getRepliesForComment(commentId)
+                _commentReplies.value = _commentReplies.value + (commentId to replies)
+                // Load like states for replies
+                val likeStates = replies.associate { reply ->
+                    reply.id to commentRepository.isCommentLiked(reply.id)
+                }
+                _commentLikes.value = _commentLikes.value + likeStates
+            } catch (e: Exception) {
+                error = "Failed to load replies: ${e.message}"
+            }
+        }
     }
 
     // Make sure to clean up when the ViewModel is cleared

@@ -44,8 +44,19 @@ service cloud.firestore {
     match /comments/{commentId} {
       allow read: if true;
       allow create: if request.auth != null;
+      allow update: if request.auth != null && (
+          // Allow comment owner to update or delete
+          request.auth.uid == resource.data.authorId ||
+          // Allow any authenticated user to update likes
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+      );
       allow delete: if request.auth != null && 
                    request.auth.uid == resource.data.authorId;
+    }
+
+    match /commentLikes/{likeId} {
+      allow read: if true;
+      allow create, delete: if request.auth != null;
     }
   }
 } 

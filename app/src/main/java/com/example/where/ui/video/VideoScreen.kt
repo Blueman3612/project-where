@@ -305,11 +305,15 @@ fun VideoScreen(
             CommentSheet(
                 comments = viewModel.comments.collectAsStateWithLifecycle().value,
                 onDismiss = { viewModel.toggleComments() },
-                onAddComment = { viewModel.addComment(it) },
+                onAddComment = { text, parentId -> viewModel.addComment(text, parentId) },
                 onDeleteComment = { viewModel.deleteComment(it) },
+                onLikeComment = { viewModel.toggleCommentLike(it) },
+                onLoadReplies = { viewModel.loadReplies(it) },
                 currentUserId = viewModel.currentUserId,
                 isLoading = viewModel.isLoadingComments,
-                isVisible = viewModel.showComments
+                isVisible = viewModel.showComments,
+                commentLikes = viewModel.commentLikes.collectAsStateWithLifecycle().value,
+                commentReplies = viewModel.commentReplies.collectAsStateWithLifecycle().value
             )
         }
     }
