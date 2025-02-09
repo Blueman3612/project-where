@@ -49,7 +49,14 @@ class UserRepository @Inject constructor(
         )
 
         return try {
-            usersCollection.document(userId).set(user.toMap()).await()
+            // Create initial user data with default settings
+            val userData = user.toMap().toMutableMap().apply {
+                put("settings", mapOf(
+                    "isDarkMode" to true  // Set dark mode as default
+                ))
+            }
+            
+            usersCollection.document(userId).set(userData).await()
             user
         } catch (e: Exception) {
             Log.e(TAG, "Error creating user: ${e.message}")
@@ -421,6 +428,57 @@ class UserRepository @Inject constructor(
             conversationId
         } catch (e: Exception) {
             Log.e(TAG, "Error creating conversation: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun updateUserSettings(isDarkMode: Boolean): Boolean {
+        val userId = auth.currentUser?.uid ?: run {
+            Log.e(TAG, "Cannot update settings: No authenticated user")
+            return false
+        }
+        
+        Log.d(TAG, "Updating dark mode setting to $isDarkMode for user $userId")
+        
+        return try {
+            val settings = mapOf(
+                "isDarkMode" to isDarkMode
+            )
+            
+            Log.d(TAG, "Attempting to update settings field...")
+            usersCollection.document(userId)
+                .update("settings", settings)
+                .await()
+            Log.d(TAG, "Successfully updated settings")
+            true
+        } catch (e: Exception) {
+            Log.d(TAG, "Initial update failed: ${e.message}, trying merge approach...")
+            // If update fails because settings field doesn't exist, try to set it
+            try {
+                usersCollection.document(userId)
+                    .set(mapOf("settings" to mapOf(
+                        "isDarkMode" to isDarkMode
+                    )), com.google.firebase.firestore.SetOptions.merge())
+                    .await()
+                Log.d(TAG, "Successfully set settings using merge")
+                true
+            } catch (e2: Exception) {
+                Log.e(TAG, "Error updating user settings: ${e2.message}")
+                Log.e(TAG, "First error was: ${e.message}")
+                false
+            }
+        }
+    }
+
+    suspend fun getUserSettings(): Map<String, Any>? {
+        val userId = auth.currentUser?.uid ?: return null
+        
+        return try {
+            val doc = usersCollection.document(userId).get().await()
+            @Suppress("UNCHECKED_CAST")
+            doc.data?.get("settings") as? Map<String, Any>
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting user settings: ${e.message}")
             null
         }
     }

@@ -7,7 +7,7 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['bio', 'username', 'profilePictureUrl']);
+            .hasOnly(['bio', 'username', 'profilePictureUrl', 'settings']);
     }
     
     match /videos/{videoId} {
