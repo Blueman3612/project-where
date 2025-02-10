@@ -46,3 +46,6 @@ app/debug/
 
 # Environment Variables
 gradle.properties
+
+# Google Maps API key
+app/src/main/res/values/maps_api.xml
