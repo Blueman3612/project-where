@@ -1,5 +1,6 @@
 package com.example.where.navigation
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -66,14 +67,25 @@ fun Navigation(
             .find { it.route == currentRoute } ?: Screen.Home
     }
 
+    // Track if we're in a conversation in Messages screen
+    var isInConversation by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopBar(
                 title = currentScreen.title,
                 showBackButton = navController.previousBackStackEntry != null,
-                onBackClick = { navController.navigateUp() },
-                showMessagesButton = currentScreen == Screen.Home,
-                onMessagesClick = { navController.navigate(Screen.Messages.route) }
+                onBackClick = {
+                    if (currentScreen == Screen.Messages && isInConversation) {
+                        isInConversation = false
+                    } else {
+                        navController.navigateUp()
+                    }
+                },
+                showMessagesButton = currentScreen != Screen.Messages,
+                onMessagesClick = { 
+                    navController.navigate(Screen.Messages.route) 
+                }
             )
         },
         bottomBar = {
@@ -261,13 +273,19 @@ fun Navigation(
             composable(Screen.Messages.route) {
                 MessagesScreen(
                     currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "",
-                    onNavigateBack = { isInConv -> 
-                        if (!isInConv) {
-                            navController.popBackStack()
-                        }
+                    onNavigateBack = { _ -> 
+                        // We don't need to handle back navigation here anymore
+                        // as it's handled by the BackHandler in MessagesScreen
                     },
                     onNavigateToProfile = { userId ->
                         navController.navigate(Screen.UserProfile.createRoute(userId))
+                    },
+                    onConversationStateChanged = { inConversation ->
+                        isInConversation = inConversation
+                    },
+                    shouldCloseConversation = currentScreen == Screen.Messages && !isInConversation,
+                    onConversationClosed = {
+                        // No need to handle conversation closed callback
                     }
                 )
             }

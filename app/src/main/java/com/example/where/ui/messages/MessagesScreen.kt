@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.where.data.model.Conversation
 import com.example.where.data.model.Message
 import com.google.firebase.auth.FirebaseAuth
@@ -38,54 +39,49 @@ fun MessagesScreen(
     onNavigateToProfile: (String) -> Unit,
     shouldCloseConversation: Boolean = false,
     onConversationClosed: () -> Unit = {},
+    onConversationStateChanged: (Boolean) -> Unit = {},
     viewModel: MessagesViewModel = hiltViewModel()
 ) {
     val conversations by viewModel.conversations.collectAsState()
     val selectedConversation by viewModel.selectedConversation.collectAsState()
     val messages by viewModel.messages.collectAsState()
 
-    // Get current user ID from Firebase Auth
-    val userId = remember { FirebaseAuth.getInstance().currentUser?.uid }
-
-    // Track if this is the initial composition
-    var isInitialComposition by remember { mutableStateOf(true) }
-    
-    // Track if conversation is being closed internally
-    var isClosingInternally by remember { mutableStateOf(false) }
+    // Update parent about conversation state changes
+    LaunchedEffect(selectedConversation) {
+        onConversationStateChanged(selectedConversation != null)
+    }
 
     // Handle conversation close signal
     LaunchedEffect(shouldCloseConversation) {
         if (shouldCloseConversation && selectedConversation != null) {
-            android.util.Log.d("MessagesScreen", "Received close conversation signal, closing conversation")
-            isClosingInternally = true
             viewModel.selectConversation(null)
             onConversationClosed()
         }
     }
 
-    // Update parent about conversation state, but don't trigger navigation on initial load or internal close
-    LaunchedEffect(selectedConversation) {
-        android.util.Log.d("MessagesScreen", "Conversation state changed: ${selectedConversation != null}, isInitial: $isInitialComposition, isClosingInternally: $isClosingInternally")
-        if (!isInitialComposition && !isClosingInternally) {
-            onNavigateBack(selectedConversation != null)
+    val handleBack: () -> Unit = {
+        if (selectedConversation != null) {
+            viewModel.selectConversation(null)
+            onConversationStateChanged(false)
         } else {
-            isInitialComposition = false
-            isClosingInternally = false
+            onNavigateBack(false)
         }
+    }
+
+    BackHandler(onBack = handleBack)
+
+    // Get current user ID from Firebase Auth
+    val userId = remember { FirebaseAuth.getInstance().currentUser?.uid }
+
+    // Handle conversation clicks
+    val onConversationClickHandler = { conversation: Conversation ->
+        viewModel.selectConversation(conversation)
     }
 
     LaunchedEffect(userId) {
         if (userId != null) {
-            Log.d("MessagesScreen", "Loading conversations for user: $userId")
             viewModel.loadConversations(userId)
         }
-    }
-
-    // Handle back press
-    BackHandler(enabled = selectedConversation != null) {
-        android.util.Log.d("MessagesScreen", "BackHandler triggered with selectedConversation: ${selectedConversation != null}")
-        isClosingInternally = true
-        viewModel.selectConversation(null)
     }
 
     Surface(
@@ -93,17 +89,13 @@ fun MessagesScreen(
         color = MaterialTheme.colorScheme.background
     ) {
         if (selectedConversation == null) {
-            android.util.Log.d("MessagesScreen", "Rendering ConversationsList")
             ConversationsList(
                 conversations = conversations,
                 currentUserId = userId ?: "",
-                onConversationClick = { conversation ->
-                    viewModel.selectConversation(conversation)
-                }
+                onConversationClick = onConversationClickHandler
             )
         } else {
             selectedConversation?.let { conversation ->
-                android.util.Log.d("MessagesScreen", "Rendering ChatScreen for conversation: ${conversation.id}")
                 ChatScreen(
                     conversation = conversation,
                     messages = messages,
@@ -252,7 +244,6 @@ private fun ChatScreen(
 
     // Mark messages as read when viewed
     LaunchedEffect(Unit) {
-        Log.d("ChatScreen", "Chat opened, marking messages as read for conversation: ${conversation.id}")
         viewModel.markMessagesAsRead(conversation.id, currentUserId)
     }
 
@@ -261,7 +252,6 @@ private fun ChatScreen(
         if (messages.isNotEmpty()) {
             val unreadMessages = messages.any { !it.read && it.senderId != currentUserId }
             if (unreadMessages) {
-                Log.d("ChatScreen", "New unread messages detected, marking as read")
                 viewModel.markMessagesAsRead(conversation.id, currentUserId)
             }
         }
