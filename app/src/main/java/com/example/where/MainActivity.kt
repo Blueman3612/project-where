@@ -16,7 +16,8 @@ import com.example.where.auth.AuthScreen
 import com.example.where.auth.AuthViewModel
 import com.example.where.auth.GoogleSignInHandler
 import com.example.where.data.repository.UserRepository
-import com.example.where.navigation.AppNavigation
+import com.example.where.navigation.Navigation
+import com.example.where.navigation.Screen
 import com.example.where.ui.theme.WhereTheme
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
@@ -79,21 +80,9 @@ class MainActivity : ComponentActivity(), GoogleSignInHandler {
             ) {
                 if (authViewModel.isAuthenticated) {
                     val navController = rememberNavController()
-                    AppNavigation(
+                    Navigation(
                         navController = navController,
-                        isDarkMode = isDarkMode,
-                        onThemeToggle = { 
-                            Log.d("MainActivity", "Theme toggle from AppNavigation: isDarkMode = ${!isDarkMode}")
-                            // Use the same theme update logic here
-                            if (authViewModel.isAuthenticated) {
-                                Log.d("MainActivity", "User is authenticated, saving theme preference")
-                                lifecycleScope.launch {
-                                    val success = userRepository.updateUserSettings(isDarkMode = !isDarkMode)
-                                    Log.d("MainActivity", "Theme preference save ${if (success) "succeeded" else "failed"}")
-                                }
-                            }
-                            isDarkMode = !isDarkMode
-                        }
+                        startDestination = Screen.Home.route
                     )
                 } else {
                     AuthScreen(

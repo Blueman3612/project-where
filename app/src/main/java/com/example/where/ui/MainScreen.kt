@@ -73,6 +73,7 @@ import com.example.where.ui.components.CommentSheet
 import com.example.where.ui.components.LikeAnimation
 import kotlin.math.roundToInt
 import com.example.where.ui.components.TopBar
+import androidx.media3.common.util.UnstableApi
 
 private const val TAG = "MainScreen"
 
@@ -98,6 +99,7 @@ private object MemoryTracker {
     }
 }
 
+@UnstableApi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(

@@ -17,6 +17,9 @@ import com.example.where.data.model.Comment
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material3.OutlinedTextFieldDefaults
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,9 +122,9 @@ fun CommentSheet(
                                 Text(if (replyingTo != null) "Write a reply..." else "Add a comment...") 
                             },
                             maxLines = 3,
-                            colors = TextFieldDefaults.outlinedTextFieldColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                             ),
                             singleLine = true
                         )
@@ -137,7 +140,7 @@ fun CommentSheet(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.Default.Send,
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Send"
                                 )
                             }
@@ -262,10 +265,8 @@ private fun CommentItem(
                         modifier = Modifier.clickable { onReply() }
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Reply,
-                            contentDescription = "Reply",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            imageVector = Icons.AutoMirrored.Filled.Reply,
+                            contentDescription = "Reply"
                         )
                         Text(
                             text = "Reply",

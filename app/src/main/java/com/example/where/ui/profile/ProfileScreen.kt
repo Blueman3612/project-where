@@ -30,8 +30,9 @@ import com.example.where.ui.components.VideoThumbnail
 import com.example.where.ui.components.LoadingSpinner
 import kotlinx.coroutines.launch
 import com.google.firebase.auth.FirebaseAuth
-import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.border
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -180,9 +181,8 @@ fun ProfileScreen(
                             }
                         ) {
                             Icon(
-                                imageVector = Icons.Default.ExitToApp,
-                                contentDescription = "Sign Out",
-                                tint = MaterialTheme.colorScheme.error
+                                imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                                contentDescription = "Sign Out"
                             )
                         }
                     }
@@ -225,9 +225,8 @@ fun ProfileScreen(
                                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f), CircleShape)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Message,
-                                contentDescription = "Message",
-                                tint = MaterialTheme.colorScheme.onSurface
+                                imageVector = Icons.AutoMirrored.Filled.Message,
+                                contentDescription = "Messages"
                             )
                         }
                     }
@@ -256,8 +255,8 @@ fun ProfileScreen(
                 }
             }
 
-            Divider(
-                modifier = Modifier.padding(bottom = 16.dp),
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant
             )
 
