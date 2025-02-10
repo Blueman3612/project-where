@@ -84,8 +84,20 @@ fun Navigation(
                 },
                 showMessagesButton = currentScreen != Screen.Messages,
                 onMessagesClick = { 
-                    navController.navigate(Screen.Messages.route) 
-                }
+                    // If we're in messages and in a conversation, close it first
+                    if (currentScreen == Screen.Messages && isInConversation) {
+                        isInConversation = false
+                    }
+                    
+                    navController.navigate(Screen.Messages.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                            inclusive = currentRoute == Screen.Messages.route
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
             )
         },
         bottomBar = {
@@ -113,9 +125,20 @@ fun Navigation(
                         },
                         selected = selected,
                         onClick = {
+                            // If we're in messages and in a conversation, close it first
+                            if (currentScreen == Screen.Messages && isInConversation) {
+                                isInConversation = false
+                            }
+                            
                             navController.navigate(screen.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
+                                    inclusive = when (screen) {
+                                        Screen.Search -> currentRoute?.startsWith("search") ?: false
+                                        Screen.Profile -> currentRoute?.startsWith("profile") ?: false
+                                        Screen.Messages -> currentRoute == Screen.Messages.route
+                                        else -> currentRoute == screen.route
+                                    }
                                 }
                                 launchSingleTop = true
                                 restoreState = true
