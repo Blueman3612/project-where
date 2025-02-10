@@ -56,7 +56,9 @@ sealed class Screen(
 @Composable
 fun Navigation(
     navController: NavHostController,
-    startDestination: String = Screen.Home.route
+    startDestination: String = Screen.Home.route,
+    isDarkMode: Boolean,
+    onThemeToggle: (Boolean) -> Unit
 ) {
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     val currentScreen = when {
@@ -237,7 +239,9 @@ fun Navigation(
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToMessages = {
                         navController.navigate(Screen.Messages.route)
-                    }
+                    },
+                    isDarkMode = isDarkMode,
+                    onThemeToggle = onThemeToggle
                 )
             }
 
@@ -260,7 +264,9 @@ fun Navigation(
                         onNavigateBack = { navController.popBackStack() },
                         onNavigateToMessages = {
                             navController.navigate(Screen.Messages.route)
-                        }
+                        },
+                        isDarkMode = isDarkMode,
+                        onThemeToggle = onThemeToggle
                     )
                 }
             }

@@ -61,28 +61,22 @@ class MainActivity : ComponentActivity(), GoogleSignInHandler {
                 }
             }
 
-            WhereTheme(
-                darkTheme = isDarkMode,
-                onThemeUpdated = { newDarkMode ->
-                    Log.d("MainActivity", "Theme toggle requested: isDarkMode = $newDarkMode")
-                    isDarkMode = newDarkMode
-                    // Save theme preference when changed
-                    if (authViewModel.isAuthenticated) {
-                        Log.d("MainActivity", "User is authenticated, saving theme preference")
-                        lifecycleScope.launch {
-                            val success = userRepository.updateUserSettings(isDarkMode = newDarkMode)
-                            Log.d("MainActivity", "Theme preference save ${if (success) "succeeded" else "failed"}")
-                        }
-                    } else {
-                        Log.d("MainActivity", "User not authenticated, skipping theme preference save")
-                    }
-                }
-            ) {
+            WhereTheme(darkTheme = isDarkMode) {
                 if (authViewModel.isAuthenticated) {
                     val navController = rememberNavController()
                     Navigation(
                         navController = navController,
-                        startDestination = Screen.Home.route
+                        startDestination = Screen.Home.route,
+                        isDarkMode = isDarkMode,
+                        onThemeToggle = { newDarkMode ->
+                            isDarkMode = newDarkMode
+                            // Save theme preference when changed
+                            if (authViewModel.isAuthenticated) {
+                                lifecycleScope.launch {
+                                    userRepository.updateUserSettings(isDarkMode = newDarkMode)
+                                }
+                            }
+                        }
                     )
                 } else {
                     AuthScreen(
