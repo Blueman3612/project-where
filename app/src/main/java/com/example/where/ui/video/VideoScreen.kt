@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -32,6 +34,7 @@ import com.example.where.ui.components.CommentSheet
 import com.example.where.ui.components.LikeAnimation
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.media3.common.util.UnstableApi
 
 @androidx.media3.common.util.UnstableApi
@@ -258,28 +261,109 @@ fun VideoScreen(
                 
                 // Map showing video location
                 viewModel.video?.let { video ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .padding(16.dp)
-                    ) {
-                        val cameraPositionState = rememberCameraPositionState {
-                            position = CameraPosition.fromLatLngZoom(video.location, 8f)
-                        }
-                        
-                        GoogleMap(
-                            modifier = Modifier.fillMaxSize(),
-                            cameraPositionState = cameraPositionState,
-                            properties = MapProperties(
-                                isMyLocationEnabled = false,
-                                mapType = MapType.NORMAL
-                            )
+                    var mapHeight by remember { mutableStateOf(200.dp) }
+                    var isDragging by remember { mutableStateOf(false) }
+                    var isPanelVisible by remember { mutableStateOf(true) }
+                    val density = LocalDensity.current
+                    
+                    if (isPanelVisible) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(mapHeight)
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp)
                         ) {
-                            Marker(
-                                state = MarkerState(position = video.location),
-                                title = "Video Location"
-                            )
+                            // Resizable Map Content
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        MaterialTheme.colorScheme.surface,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                            ) {
+                                val cameraPositionState = rememberCameraPositionState {
+                                    position = CameraPosition.fromLatLngZoom(video.location, 8f)
+                                }
+                                
+                                GoogleMap(
+                                    modifier = Modifier.fillMaxSize(),
+                                    cameraPositionState = cameraPositionState,
+                                    properties = MapProperties(
+                                        isMyLocationEnabled = false,
+                                        mapType = MapType.NORMAL
+                                    )
+                                ) {
+                                    Marker(
+                                        state = MarkerState(position = video.location),
+                                        title = "Video Location"
+                                    )
+                                }
+                                
+                                // Drag Handle
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(8.dp)
+                                        .fillMaxWidth()
+                                        .height(24.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.surface,
+                                            RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+                                        )
+                                        .pointerInput(Unit) {
+                                            detectVerticalDragGestures(
+                                                onDragStart = { isDragging = true },
+                                                onDragEnd = {
+                                                    isDragging = false
+                                                    // Hide panel if dragged below minimum height
+                                                    if (mapHeight < 100.dp) {
+                                                        isPanelVisible = false
+                                                        mapHeight = 200.dp // Reset for next show
+                                                    }
+                                                },
+                                                onDragCancel = { isDragging = false },
+                                                onVerticalDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    val dragDp = (dragAmount / density.density).dp
+                                                    mapHeight = (mapHeight - dragDp)
+                                                        .coerceIn(50.dp, 400.dp)
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    // Drag indicator line
+                                    Box(
+                                        modifier = Modifier
+                                            .width(32.dp)
+                                            .height(4.dp)
+                                            .background(
+                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                                RoundedCornerShape(2.dp)
+                                            )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Show button to restore map when hidden
+                    if (!isPanelVisible) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.BottomEnd
+                        ) {
+                            FloatingActionButton(
+                                onClick = { isPanelVisible = true },
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Map,
+                                    contentDescription = "Show Map"
+                                )
+                            }
                         }
                     }
                 }

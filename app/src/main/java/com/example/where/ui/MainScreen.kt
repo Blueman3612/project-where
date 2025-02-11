@@ -72,6 +72,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import android.graphics.drawable.Drawable
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 private const val TAG = "MainScreen"
 
@@ -352,8 +353,9 @@ fun MainScreen(
     var lastDragDirection by remember { mutableStateOf(0f) }
     
     // Animation for map panel
-    val mapPanelHeightPercent by animateFloatAsState(
-        targetValue = if (showMap) 0.6f else 0f,
+    var mapPanelHeightPercent by remember { mutableStateOf(0.6f) }
+    val animatedMapHeight by animateFloatAsState(
+        targetValue = if (showMap) mapPanelHeightPercent else 0f,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "Map Panel Animation"
     )
@@ -384,6 +386,15 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .offset { IntOffset(swipeOffset.roundToInt(), 0) }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = {
+                            if (showMap) {
+                                showMap = false
+                            }
+                        }
+                    )
+                }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragStart = { 
@@ -697,7 +708,7 @@ fun MainScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(mapPanelHeightPercent)
+                .fillMaxHeight(animatedMapHeight)
                 .align(Alignment.BottomCenter)
                 .graphicsLayer {
                     alpha = if (showMap) 1f else 0f
@@ -709,100 +720,151 @@ fun MainScreen(
                 tonalElevation = 8.dp
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        // Only disable pointer events when map is hidden
-                        .then(if (!showMap) Modifier.pointerInput(Unit) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    awaitPointerEvent().changes.forEach { it.consume() }
-                                }
-                            }
-                        } else Modifier)
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    GoogleMap(
-                        modifier = Modifier.fillMaxSize(),
-                        cameraPositionState = cameraPositionState,
-                        properties = MapProperties(
-                            // Use NONE map type when hidden for better performance
-                            mapType = if (showMap) MapType.NORMAL else MapType.NONE,
-                            isMyLocationEnabled = false,
-                            mapStyleOptions = null,
-                            isBuildingEnabled = false, // Disable 3D buildings for better performance
-                            isIndoorEnabled = false,   // Disable indoor maps for better performance
-                            isTrafficEnabled = false   // Disable traffic data for better performance
-                        ),
-                        uiSettings = MapUiSettings(
-                            zoomControlsEnabled = true,  // Re-enable zoom controls
-                            zoomGesturesEnabled = showMap,
-                            scrollGesturesEnabled = showMap,
-                            rotationGesturesEnabled = false,
-                            tiltGesturesEnabled = false,
-                            compassEnabled = false,
-                            mapToolbarEnabled = false
-                        ),
-                        onMapLoaded = {
-                            isMapLoaded = true
-                        },
-                        onMapClick = { latLng ->
-                            if (!hasGuessedCurrentVideo && showMap) {
-                                selectedLocation = latLng
-                            }
-                        }
-                    ) {
-                        // Show selected location marker
-                        selectedLocation?.let { location ->
-                            Marker(
-                                state = MarkerState(position = location),
-                                title = "Your Guess",
-                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                    // Drag Handle at the top
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(24.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surface,
+                                RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
                             )
-                        }
-
-                        // Show actual location and polyline when guess is submitted
-                        if (hasGuessedCurrentVideo && selectedLocation != null) {
-                            viewModel.currentVideoUrl?.let { video ->
-                                // Actual location marker
-                                Marker(
-                                    state = MarkerState(position = video.location),
-                                    title = "Actual Location",
-                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragStart = { /* start drag */ },
+                                    onDragEnd = {
+                                        // If dragged down significantly or below minimum height, hide map
+                                        if (mapPanelHeightPercent < 0.3f) {
+                                            showMap = false
+                                            // Reset height for next time
+                                            mapPanelHeightPercent = 0.6f
+                                        }
+                                    },
+                                    onDragCancel = { /* cancel drag */ },
+                                    onVerticalDrag = { change, dragAmount ->
+                                        change.consume()
+                                        // Make downward dragging more responsive for dismissal
+                                        val scaleFactor = if (dragAmount > 0) 2000f else 1000f
+                                        mapPanelHeightPercent = (mapPanelHeightPercent - (dragAmount / scaleFactor))
+                                            .coerceIn(0.2f, 0.8f)
+                                    }
                                 )
-
-                                // Dotted line between guess and actual location
-                                Polyline(
-                                    points = listOf(selectedLocation!!, video.location),
-                                    pattern = listOf(Dot(), Gap(20f)),
-                                    color = androidx.compose.ui.graphics.Color.DarkGray,
-                                    width = 5f
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Drag indicator line
+                        Box(
+                            modifier = Modifier
+                                .width(32.dp)
+                                .height(4.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                    RoundedCornerShape(2.dp)
                                 )
-
-                                // Update camera position to show both markers
-                                LaunchedEffect(selectedLocation, video.location) {
-                                    val (bounds, zoom) = calculateBounds(selectedLocation!!, video.location)
-                                    cameraPositionState.animate(
-                                        update = CameraUpdateFactory.newLatLngBounds(bounds, 100),
-                                        durationMs = 1000
-                                    )
-                                }
-                            }
-                        }
+                        )
                     }
 
-                    // Submit Guess Button
-                    if (!hasGuessedCurrentVideo && selectedLocation != null && showMap) {
-                        Button(
-                            onClick = { 
-                                selectedLocation?.let { location ->
-                                    viewModel.submitGuess(location)
-                                    hasGuessedCurrentVideo = true
+                    // Map Content
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = 24.dp) // Account for drag handle
+                            // Only disable pointer events when map is hidden
+                            .then(if (!showMap) Modifier.pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        awaitPointerEvent().changes.forEach { it.consume() }
+                                    }
                                 }
+                            } else Modifier)
+                    ) {
+                        GoogleMap(
+                            modifier = Modifier.fillMaxSize(),
+                            cameraPositionState = cameraPositionState,
+                            properties = MapProperties(
+                                // Use NONE map type when hidden for better performance
+                                mapType = if (showMap) MapType.NORMAL else MapType.NONE,
+                                isMyLocationEnabled = false,
+                                mapStyleOptions = null,
+                                isBuildingEnabled = false, // Disable 3D buildings for better performance
+                                isIndoorEnabled = false,   // Disable indoor maps for better performance
+                                isTrafficEnabled = false   // Disable traffic data for better performance
+                            ),
+                            uiSettings = MapUiSettings(
+                                zoomControlsEnabled = true,  // Re-enable zoom controls
+                                zoomGesturesEnabled = showMap,
+                                scrollGesturesEnabled = showMap,
+                                rotationGesturesEnabled = false,
+                                tiltGesturesEnabled = false,
+                                compassEnabled = false,
+                                mapToolbarEnabled = false
+                            ),
+                            onMapLoaded = {
+                                isMapLoaded = true
                             },
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(16.dp)
+                            onMapClick = { latLng ->
+                                if (!hasGuessedCurrentVideo && showMap) {
+                                    selectedLocation = latLng
+                                }
+                            }
                         ) {
-                            Text("Submit Guess")
+                            // Show selected location marker
+                            selectedLocation?.let { location ->
+                                Marker(
+                                    state = MarkerState(position = location),
+                                    title = "Your Guess",
+                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                                )
+                            }
+
+                            // Show actual location and polyline when guess is submitted
+                            if (hasGuessedCurrentVideo && selectedLocation != null) {
+                                viewModel.currentVideoUrl?.let { video ->
+                                    // Actual location marker
+                                    Marker(
+                                        state = MarkerState(position = video.location),
+                                        title = "Actual Location",
+                                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+                                    )
+
+                                    // Dotted line between guess and actual location
+                                    Polyline(
+                                        points = listOf(selectedLocation!!, video.location),
+                                        pattern = listOf(Dot(), Gap(20f)),
+                                        color = androidx.compose.ui.graphics.Color.DarkGray,
+                                        width = 5f
+                                    )
+
+                                    // Update camera position to show both markers
+                                    LaunchedEffect(selectedLocation, video.location) {
+                                        val (bounds, zoom) = calculateBounds(selectedLocation!!, video.location)
+                                        cameraPositionState.animate(
+                                            update = CameraUpdateFactory.newLatLngBounds(bounds, 100),
+                                            durationMs = 1000
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Submit Guess Button
+                        if (!hasGuessedCurrentVideo && selectedLocation != null && showMap) {
+                            Button(
+                                onClick = { 
+                                    selectedLocation?.let { location ->
+                                        viewModel.submitGuess(location)
+                                        hasGuessedCurrentVideo = true
+                                    }
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(16.dp)
+                            ) {
+                                Text("Submit Guess")
+                            }
                         }
                     }
                 }
