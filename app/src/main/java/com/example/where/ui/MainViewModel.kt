@@ -69,11 +69,11 @@ class MainViewModel @Inject constructor(
     private val _commentReplies = MutableStateFlow<Map<String, List<Comment>>>(emptyMap())
     val commentReplies: StateFlow<Map<String, List<Comment>>> = _commentReplies.asStateFlow()
 
-    private val _showComments = mutableStateOf(false)
-    val showComments: Boolean get() = _showComments.value
+    private val _showComments = MutableStateFlow(false)
+    val showComments: StateFlow<Boolean> = _showComments.asStateFlow()
 
-    private val _isLoadingComments = mutableStateOf(false)
-    val isLoadingComments: Boolean get() = _isLoadingComments.value
+    private val _isLoadingComments = MutableStateFlow(false)
+    val isLoadingComments: StateFlow<Boolean> = _isLoadingComments.asStateFlow()
 
     // Use the video's comments field directly
     val commentCount: Int get() = _currentVideo.value?.comments ?: 0
