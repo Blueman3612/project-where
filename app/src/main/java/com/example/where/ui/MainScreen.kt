@@ -156,7 +156,7 @@ fun MainScreen(
                     )
             )
             .build().apply {
-                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+                videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                 repeatMode = Player.REPEAT_MODE_ONE
                 volume = 0f
                 playWhenReady = false
@@ -222,13 +222,17 @@ fun MainScreen(
     // Handle current video changes
     LaunchedEffect(viewModel.currentVideoUrl) {
         viewModel.currentVideoUrl?.let { video ->
-            // First detach the player
+            // First stop and reset the current player
+            currentPlayer.apply {
+                stop()
+                clearMediaItems()
+            }
+            
+            // Detach the player from the view
             currentPlayerView.value?.get()?.player = null
             
             // Then update the current player
             currentPlayer.apply {
-                stop()
-                clearMediaItems()
                 setMediaItem(MediaItem.fromUri(video.url))
                 prepare()
                 playWhenReady = true
@@ -318,6 +322,14 @@ fun MainScreen(
         }
     }
 
+    // Add this effect to handle swipe transitions
+    LaunchedEffect(swipeOffset) {
+        if (isSwipeInProgress && currentPlayerView.value?.get()?.player != null) {
+            // Detach player during swipe to prevent surface issues
+            currentPlayerView.value?.get()?.player = null
+        }
+    }
+
     // Function to calculate bounds that include both points
     fun calculateBounds(point1: LatLng, point2: LatLng): Pair<LatLngBounds, Float> {
         val builder = LatLngBounds.builder()
@@ -356,41 +368,35 @@ fun MainScreen(
                     .background(Color.Black)
                     .offset { IntOffset(swipeOffset.roundToInt(), 0) }
                     .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                // Use the last drag direction to determine overlay state
-                                if (kotlin.math.abs(lastDragDirection) > 5) {
-                                    showOverlay = lastDragDirection > 0
-                                }
-                            }
-                        ) { _, dragAmount ->
-                            // Store the drag direction and update overlay
-                            lastDragDirection = dragAmount
-                            if (kotlin.math.abs(dragAmount) > 5) {
-                                showOverlay = dragAmount > 0
-                            }
-                        }
-                    }
-                    .pointerInput(Unit) {
                         detectHorizontalDragGestures(
-                            onDragStart = { isSwipeInProgress = true },
+                            onDragStart = { 
+                                isSwipeInProgress = true
+                                // Pause and detach player at start of swipe
+                                currentPlayer.pause()
+                                currentPlayerView.value?.get()?.player = null
+                            },
                             onDragEnd = {
                                 if (swipeOffset < -400 && showActualLocation) {  // Threshold for swipe
-                                    // Detach player before switch
-                                    currentPlayerView.value?.get()?.apply {
-                                        player = null
-                                        setShutterBackgroundColor(AndroidColor.BLACK)
-                                    }
                                     viewModel.switchToNextVideo()
                                     showActualLocation = false
                                     selectedLocation = null
                                 }
                                 swipeOffset = 0f
                                 isSwipeInProgress = false
+                                // Reattach player after swipe if needed
+                                if (!showActualLocation) {
+                                    currentPlayerView.value?.get()?.player = currentPlayer
+                                    currentPlayer.play()
+                                }
                             },
                             onDragCancel = {
                                 swipeOffset = 0f
                                 isSwipeInProgress = false
+                                // Reattach player after cancelled swipe
+                                if (!showActualLocation) {
+                                    currentPlayerView.value?.get()?.player = currentPlayer
+                                    currentPlayer.play()
+                                }
                             },
                             onHorizontalDrag = { _, dragAmount ->
                                 if (showActualLocation) {  // Only allow swipe after guessing

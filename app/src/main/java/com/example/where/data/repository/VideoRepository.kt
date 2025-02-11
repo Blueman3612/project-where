@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import com.example.where.data.model.Video
 import com.example.where.data.model.VideoSource
+import com.example.where.util.VideoCompressor
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FieldPath
@@ -22,6 +23,7 @@ import java.io.IOException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.google.firebase.auth.FirebaseAuth
+import java.util.UUID
 
 private const val TAG = "VideoRepository"
 
@@ -81,74 +83,53 @@ class VideoRepository @Inject constructor(
         }
     }
 
-    suspend fun uploadVideo(
-        videoUri: Uri,
-        location: LatLng,
-        title: String?,
-        description: String?,
-        authorId: String
-    ): Video {
-        Log.d(TAG, "Starting video upload from Uri: $videoUri")
-        
+    suspend fun uploadVideo(videoUri: Uri, location: LatLng, userId: String): Result<String> = withContext(Dispatchers.IO) {
         try {
-            // Get the user's username
-            val userDoc = firestore.collection("users").document(authorId).get().await()
-            val authorUsername = userDoc.getString("username") ?: throw Exception("User not found")
-
-            // Upload video to Firebase Storage with chunked upload
-            val videoRef = storage.reference.child("videos/${System.currentTimeMillis()}_${authorId}.mp4")
+            // First compress the video
+            val compressedVideoUri = VideoCompressor.compressVideo(context, videoUri)
             
-            // Start upload with detailed error handling
-            try {
-                val stream = context.contentResolver.openInputStream(videoUri)
-                    ?: throw IOException("Failed to open video stream")
+            // Generate a unique ID for the video
+            val videoId = UUID.randomUUID().toString()
+            
+            // Upload the compressed video to Firebase Storage
+            val videoRef = storage.reference.child("videos/$videoId.mp4")
+            val uploadTask = videoRef.putFile(compressedVideoUri)
+            
+            // Wait for the upload to complete and get the download URL
+            val downloadUrl = uploadTask.await().storage.downloadUrl.await().toString()
 
-                val metadata = StorageMetadata.Builder()
-                    .setContentType("video/mp4")
-                    .build()
-
-                // Use putStream instead of putFile for better memory management
-                val uploadTask = stream.use { inputStream ->
-                    videoRef.putStream(inputStream, metadata)
-                        .addOnProgressListener { taskSnapshot ->
-                            val progress = (100.0 * taskSnapshot.bytesTransferred / taskSnapshot.totalByteCount)
-                            Log.d(TAG, "Upload progress: $progress%")
-                        }
-                        .await()
-                }
-
-                Log.d(TAG, "Video file uploaded successfully")
-                
-                val videoUrl = uploadTask.storage.downloadUrl.await().toString()
-                Log.d(TAG, "Video URL retrieved: $videoUrl")
-
-                // Generate and upload thumbnail
-                val thumbnailUrl = generateAndUploadThumbnail(videoUri, authorId)
-
-                // Add video metadata to Firestore
-                return addVideo(
-                    url = videoUrl,
-                    location = location,
-                    title = title,
-                    description = description,
-                    thumbnailUrl = thumbnailUrl,
-                    authorId = authorId,
-                    authorUsername = authorUsername,
-                    source = VideoSource.USER_UPLOAD
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during video upload", e)
-                when {
-                    e.message?.contains("permission") == true -> 
-                        throw Exception("Permission denied. Please check Firebase Storage rules.", e)
-                    e.message?.contains("network") == true -> 
-                        throw Exception("Network error during upload. Please check your connection.", e)
-                    else -> throw Exception("Failed to upload video: ${e.message}", e)
-                }
-            }
+            // Get the user's username
+            val userDoc = firestore.collection("users").document(userId).get().await()
+            val authorUsername = userDoc.getString("username") ?: throw Exception("User not found")
+            
+            // Create the video document in Firestore
+            val video = Video(
+                id = videoId,
+                url = downloadUrl,
+                thumbnailUrl = null,
+                location = location,
+                title = null,
+                description = null,
+                authorId = userId,
+                authorUsername = authorUsername,
+                source = VideoSource.USER_UPLOAD,
+                likes = 0,
+                createdAt = System.currentTimeMillis(),
+                comments = 0
+            )
+            
+            firestore.collection("videos")
+                .document(videoId)
+                .set(video.toMap())
+                .await()
+            
+            // Clean up the compressed video file
+            context.contentResolver.delete(compressedVideoUri, null, null)
+            
+            Result.success(videoId)
         } catch (e: Exception) {
-            Log.e(TAG, "Error in uploadVideo", e)
-            throw e
+            Log.e(TAG, "Error uploading video", e)
+            Result.failure(e)
         }
     }
 

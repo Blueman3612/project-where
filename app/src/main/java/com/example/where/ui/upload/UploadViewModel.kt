@@ -139,9 +139,7 @@ class UploadViewModel @Inject constructor(
                 videoRepository.uploadVideo(
                     videoUri = videoUri,
                     location = location,
-                    title = null,
-                    description = null,
-                    authorId = userId
+                    userId = userId
                 )
 
                 withContext(Dispatchers.Main) {
