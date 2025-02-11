@@ -52,7 +52,7 @@ sealed class Screen(
     object Auth : Screen("auth", "Auth", Icons.Default.Lock)
 }
 
-@UnstableApi
+@androidx.media3.common.util.UnstableApi
 @Composable
 fun Navigation(
     navController: NavHostController,

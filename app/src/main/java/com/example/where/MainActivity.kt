@@ -25,6 +25,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+@androidx.media3.common.util.UnstableApi
 @AndroidEntryPoint
 class MainActivity : ComponentActivity(), GoogleSignInHandler {
 

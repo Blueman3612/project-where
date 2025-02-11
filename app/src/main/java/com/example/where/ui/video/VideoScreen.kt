@@ -32,7 +32,9 @@ import com.example.where.ui.components.CommentSheet
 import com.example.where.ui.components.LikeAnimation
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.media3.common.util.UnstableApi
 
+@androidx.media3.common.util.UnstableApi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoScreen(

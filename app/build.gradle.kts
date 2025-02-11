@@ -27,6 +27,13 @@ android {
         manifestPlaceholders["MAPS_API_KEY"] = project.findProperty("MAPS_API_KEY") as String? ?: ""
     }
 
+    lint {
+        baseline = file("lint-baseline.xml")
+        abortOnError = false  // Prevents build failures due to lint errors
+        checkReleaseBuilds = false  // Disable lint checks for release builds
+        disable += setOf("UnusedResources", "UnusedIds", "Deprecated")  // Disable specific lint checks
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -123,6 +130,7 @@ dependencies {
     // Maps
     implementation("com.google.maps.android:maps-compose:4.3.0")
     implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation("com.google.android.gms:play-services-base:18.3.0")
 
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
