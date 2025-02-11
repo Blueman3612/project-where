@@ -358,6 +358,15 @@ fun MainScreen(
         label = "Map Panel Animation"
     )
 
+    // Add these near the top of the MainScreen composable with other state variables
+    var isMapLoaded by remember { mutableStateOf(false) }
+
+    // Update the LaunchedEffect for map preloading
+    LaunchedEffect(Unit) {
+        // Start with a wider view of the world
+        cameraPositionState.position = CameraPosition.fromLatLngZoom(LatLng(0.0, 0.0), 1f)
+    }
+
     // Effect to handle screen disposal and returns
     DisposableEffect(Unit) {
         onDispose {
@@ -410,10 +419,16 @@ fun MainScreen(
                 }
         ) {
             if (viewModel.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = Color.White
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = Color.White
+                    )
+                }
             } else {
                 AndroidView(
                     factory = { context ->
@@ -679,26 +694,58 @@ fun MainScreen(
         }
 
         // Map Panel Overlay
-        AnimatedVisibility(
-            visible = showMap,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it }),
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(mapPanelHeightPercent)
                 .align(Alignment.BottomCenter)
+                .graphicsLayer {
+                    alpha = if (showMap) 1f else 0f
+                }
         ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp
             ) {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // Only disable pointer events when map is hidden
+                        .then(if (!showMap) Modifier.pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    awaitPointerEvent().changes.forEach { it.consume() }
+                                }
+                            }
+                        } else Modifier)
+                ) {
                     GoogleMap(
                         modifier = Modifier.fillMaxSize(),
                         cameraPositionState = cameraPositionState,
+                        properties = MapProperties(
+                            // Use NONE map type when hidden for better performance
+                            mapType = if (showMap) MapType.NORMAL else MapType.NONE,
+                            isMyLocationEnabled = false,
+                            mapStyleOptions = null,
+                            isBuildingEnabled = false, // Disable 3D buildings for better performance
+                            isIndoorEnabled = false,   // Disable indoor maps for better performance
+                            isTrafficEnabled = false   // Disable traffic data for better performance
+                        ),
+                        uiSettings = MapUiSettings(
+                            zoomControlsEnabled = true,  // Re-enable zoom controls
+                            zoomGesturesEnabled = showMap,
+                            scrollGesturesEnabled = showMap,
+                            rotationGesturesEnabled = false,
+                            tiltGesturesEnabled = false,
+                            compassEnabled = false,
+                            mapToolbarEnabled = false
+                        ),
+                        onMapLoaded = {
+                            isMapLoaded = true
+                        },
                         onMapClick = { latLng ->
-                            if (!hasGuessedCurrentVideo) {
+                            if (!hasGuessedCurrentVideo && showMap) {
                                 selectedLocation = latLng
                             }
                         }
@@ -743,7 +790,7 @@ fun MainScreen(
                     }
 
                     // Submit Guess Button
-                    if (!hasGuessedCurrentVideo && selectedLocation != null) {
+                    if (!hasGuessedCurrentVideo && selectedLocation != null && showMap) {
                         Button(
                             onClick = { 
                                 selectedLocation?.let { location ->
@@ -789,6 +836,18 @@ fun MainScreen(
                 ) {
                     Text(error)
                 }
+            }
+        }
+
+        // Add loading indicator for map
+        if (!isMapLoaded && showMap) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
             }
         }
     }
