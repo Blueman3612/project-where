@@ -44,6 +44,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -67,6 +68,10 @@ import com.example.where.ui.components.TopBar
 import kotlinx.coroutines.flow.StateFlow
 import android.os.Build
 import android.view.View
+import com.bumptech.glide.Glide
+import com.bumptech.glide.request.target.CustomTarget
+import com.bumptech.glide.request.transition.Transition
+import android.graphics.drawable.Drawable
 
 private const val TAG = "MainScreen"
 
@@ -165,7 +170,7 @@ fun MainScreen(
     }
 
     fun createOptimizedPlayer() = ExoPlayer.Builder(context)
-        .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+        .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -176,6 +181,10 @@ fun MainScreen(
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
+        )
+        .setRenderersFactory(
+            DefaultRenderersFactory(context)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
         )
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(context)
@@ -188,7 +197,7 @@ fun MainScreen(
                 )
         )
         .build().apply {
-            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+            videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
             repeatMode = Player.REPEAT_MODE_ONE
             volume = 0f
             playWhenReady = false
@@ -287,7 +296,30 @@ fun MainScreen(
             currentPlayerView.value?.get()?.apply {
                 hideController()
                 setKeepContentOnPlayerReset(true)
+                
+                // Set the default background color first
                 setShutterBackgroundColor(AndroidColor.BLACK)
+                
+                // Set the thumbnail as the background if available
+                viewModel.currentVideoUrl?.thumbnailUrl?.let { thumbnailUrl ->
+                    // Create a drawable from the thumbnail URL using Glide
+                    Glide.with(context)
+                        .load(thumbnailUrl)
+                        .into(object : CustomTarget<Drawable>() {
+                            override fun onResourceReady(
+                                resource: Drawable,
+                                transition: Transition<in Drawable>?
+                            ) {
+                                defaultArtwork = resource
+                                setDefaultArtwork(resource)
+                            }
+                            
+                            override fun onLoadCleared(placeholder: Drawable?) {
+                                // Do nothing
+                            }
+                        })
+                }
+                
                 player = currentPlayer
                 player?.play()
             }
@@ -391,10 +423,13 @@ fun MainScreen(
                             setKeepContentOnPlayerReset(true)
                             setShutterBackgroundColor(AndroidColor.BLACK)
                             
+                            // Set resize mode for proper letterboxing
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            
                             // Optimize video rendering
                             setKeepScreenOn(true)
                             
-                            // Disable HW acceleration if we're getting rendering issues
+                            // Enable hardware acceleration for better performance
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                                 setLayerType(View.LAYER_TYPE_HARDWARE, null)
                             }
