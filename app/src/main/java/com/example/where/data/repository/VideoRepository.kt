@@ -24,6 +24,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.google.firebase.auth.FirebaseAuth
 import java.util.UUID
+import com.google.firebase.firestore.FieldValue
 
 private const val TAG = "VideoRepository"
 
@@ -730,27 +731,47 @@ class VideoRepository @Inject constructor(
                 .await()
                 .documents
                 .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+                .also { videos ->
+                    Log.d(TAG, "Retrieved ${videos.size} videos for processing")
+                    videos.forEach { video ->
+                        Log.d(TAG, "Video ${video.id}: primaryLanguage=${video.primaryLanguage}, confidence=${video.languageConfidence}")
+                    }
+                }
         } catch (e: Exception) {
             Log.e("VideoRepository", "Error getting all videos", e)
             emptyList()
         }
     }
 
-    suspend fun updateVideoLanguage(videoId: String, language: String, confidence: Float) {
+    suspend fun updateVideoLanguage(videoId: String, language: String?, confidence: Float?) {
         try {
-            firestore.collection("videos")
-                .document(videoId)
-                .update(
-                    mapOf(
-                        "detectedLanguage" to language,
-                        "languageConfidence" to confidence,
-                        "languageDetectedAt" to System.currentTimeMillis()
-                    )
-                )
+            Log.d(TAG, "Updating language for video $videoId - Language: $language, Confidence: $confidence")
+            
+            val updates = mutableMapOf<String, Any?>()
+            
+            // Only add non-null values to the update map
+            if (language != null) {
+                updates["primaryLanguage"] = language
+            } else {
+                updates["primaryLanguage"] = FieldValue.delete()
+            }
+            
+            if (confidence != null) {
+                updates["languageConfidence"] = confidence
+            } else {
+                updates["languageConfidence"] = FieldValue.delete()
+            }
+            
+            updates["languageUpdatedAt"] = FieldValue.serverTimestamp()
+
+            // Update Firestore document
+            videosCollection.document(videoId)
+                .set(updates, com.google.firebase.firestore.SetOptions.merge())
                 .await()
-            Log.d("VideoRepository", "Updated language for video $videoId: $language ($confidence)")
+            
+            Log.d(TAG, "Successfully updated language fields for video $videoId")
         } catch (e: Exception) {
-            Log.e("VideoRepository", "Error updating video language", e)
+            Log.e(TAG, "Error updating video language: ${e.message}", e)
             throw e
         }
     }

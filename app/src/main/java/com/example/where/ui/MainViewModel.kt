@@ -25,6 +25,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import javax.inject.Inject
 import kotlin.math.*
+import kotlinx.coroutines.delay
+
+private const val TAG = "MainViewModel"
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -91,6 +94,9 @@ class MainViewModel @Inject constructor(
     private val languageDetector = LanguageDetector(context)
     private val _detectedLanguage = MutableStateFlow<LanguageDetector.LanguageResult?>(null)
     val detectedLanguage: StateFlow<LanguageDetector.LanguageResult?> = _detectedLanguage.asStateFlow()
+
+    private val _processingStatus = MutableStateFlow<String?>(null)
+    val processingStatus: StateFlow<String?> = _processingStatus.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -495,28 +501,120 @@ class MainViewModel @Inject constructor(
     fun processAllVideosForLanguage() {
         viewModelScope.launch {
             try {
-                Log.d("LangTest", "Starting batch processing of all videos")
+                _processingStatus.value = "Starting batch video processing..."
+                
+                // Get all videos
                 val videos = videoRepository.getAllVideos()
-                Log.d("LangTest", "Found ${videos.size} videos to process")
-
-                videos.forEachIndexed { index, video ->
-                    Log.d("LangTest", "Processing video ${index + 1}/${videos.size}: ${video.id}")
+                Log.d(TAG, "Retrieved ${videos.size} videos for processing")
+                
+                var processed = 0
+                var successful = 0
+                var failed = 0
+                
+                videos.forEach { video ->
                     try {
+                        _processingStatus.value = "Processing video ${processed + 1}/${videos.size}: ${video.id}"
+                        Log.d(TAG, "=== Starting processing for video ${video.id} ===")
+                        
                         val analysis = languageDetector.analyzeVideoForLanguage(video.url)
-                        videoRepository.updateVideoLanguage(
-                            videoId = video.id,
-                            language = analysis.primaryLanguage,
-                            confidence = analysis.confidence
-                        )
-                        Log.d("LangTest", "Successfully processed video ${video.id}")
+                        
+                        // Only update if we have successful detections and good confidence
+                        if (analysis.successfulDetections > 0 && analysis.confidence >= 0.3f) {
+                            videoRepository.updateVideoLanguage(
+                                videoId = video.id,
+                                language = analysis.primaryLanguage,
+                                confidence = analysis.confidence
+                            )
+                            successful++
+                            Log.d(TAG, "Successfully processed video ${video.id} - Language: ${analysis.primaryLanguage}, Confidence: ${analysis.confidence}")
+                        } else {
+                            // If no confident detection, set language fields to null
+                            videoRepository.updateVideoLanguage(
+                                videoId = video.id,
+                                language = null,
+                                confidence = null
+                            )
+                            Log.d(TAG, "No confident language detection for video ${video.id}")
+                        }
+                        
                     } catch (e: Exception) {
-                        Log.e("LangTest", "Error processing video ${video.id}", e)
+                        failed++
+                        Log.e(TAG, "Error processing video ${video.id}", e)
+                    } finally {
+                        processed++
+                        _processingStatus.value = "Processed $processed/${videos.size} videos (Success: $successful, Failed: $failed)"
                     }
+                    
+                    // Add a small delay between videos to avoid overwhelming the system
+                    delay(1000)
                 }
-                Log.d("LangTest", "Batch processing complete")
+                
+                _processingStatus.value = "Completed processing ${videos.size} videos (Success: $successful, Failed: $failed)"
+                Log.d(TAG, "Batch processing complete - Processed: $processed, Success: $successful, Failed: $failed")
+                
             } catch (e: Exception) {
-                Log.e("LangTest", "Error in batch processing", e)
-                _error.value = "Error processing videos: ${e.message}"
+                Log.e(TAG, "Error during batch processing", e)
+                _processingStatus.value = "Error: ${e.message}"
+            }
+        }
+    }
+
+    fun processAllVideos() {
+        viewModelScope.launch {
+            try {
+                _processingStatus.value = "Starting batch video processing..."
+                
+                // Get all videos
+                val videos = videoRepository.getAllVideos()
+                Log.d(TAG, "Retrieved ${videos.size} videos for processing")
+                
+                var processed = 0
+                var successful = 0
+                var failed = 0
+                
+                videos.forEach { video ->
+                    try {
+                        _processingStatus.value = "Processing video ${processed + 1}/${videos.size}: ${video.id}"
+                        Log.d(TAG, "=== Starting processing for video ${video.id} ===")
+                        
+                        val analysis = languageDetector.analyzeVideoForLanguage(video.url)
+                        
+                        // Only update if we have successful detections
+                        if (analysis.successfulDetections > 0 && analysis.confidence >= 0.3f) {
+                            videoRepository.updateVideoLanguage(
+                                video.id,
+                                analysis.primaryLanguage,
+                                analysis.confidence
+                            )
+                            successful++
+                            Log.d(TAG, "Successfully processed video ${video.id} - Language: ${analysis.primaryLanguage}, Confidence: ${analysis.confidence}")
+                        } else {
+                            videoRepository.updateVideoLanguage(
+                                video.id,
+                                null,
+                                null
+                            )
+                            Log.d(TAG, "No confident language detection for video ${video.id}")
+                        }
+                        
+                    } catch (e: Exception) {
+                        failed++
+                        Log.e(TAG, "Error processing video ${video.id}", e)
+                    } finally {
+                        processed++
+                        _processingStatus.value = "Processed $processed/${videos.size} videos (Success: $successful, Failed: $failed)"
+                    }
+                    
+                    // Add a small delay between videos to avoid overwhelming the system
+                    delay(1000)
+                }
+                
+                _processingStatus.value = "Completed processing ${videos.size} videos (Success: $successful, Failed: $failed)"
+                Log.d(TAG, "Batch processing complete - Processed: $processed, Success: $successful, Failed: $failed")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during batch processing", e)
+                _processingStatus.value = "Error: ${e.message}"
             }
         }
     }

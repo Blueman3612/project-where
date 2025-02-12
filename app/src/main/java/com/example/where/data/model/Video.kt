@@ -18,24 +18,30 @@ data class Video(
     val source: VideoSource,
     val likes: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
-    val comments: Int = 0
+    val comments: Int = 0,
+    val primaryLanguage: String? = null,
+    val languageConfidence: Float? = null,
+    val languageUpdatedAt: Long? = null
 ) {
-    fun toMap(): Map<String, Any> = mapOf(
+    fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,
         "url" to url,
-        "thumbnailUrl" to (thumbnailUrl ?: ""),
+        "thumbnailUrl" to thumbnailUrl,
         "location" to mapOf(
             "latitude" to location.latitude,
             "longitude" to location.longitude
         ),
-        "title" to (title ?: ""),
-        "description" to (description ?: ""),
+        "title" to title,
+        "description" to description,
         "authorId" to authorId,
         "authorUsername" to authorUsername,
         "source" to source.name,
         "likes" to likes,
         "createdAt" to createdAt,
-        "comments" to comments
+        "comments" to comments,
+        "primaryLanguage" to primaryLanguage,
+        "languageConfidence" to languageConfidence,
+        "languageUpdatedAt" to languageUpdatedAt
     ).filterValues { it != null }
 
     companion object {
@@ -96,7 +102,10 @@ data class Video(
                     },
                     likes = (map["likes"] as? Number)?.toInt() ?: 0,
                     createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
-                    comments = (map["comments"] as? Number)?.toInt() ?: 0
+                    comments = (map["comments"] as? Number)?.toInt() ?: 0,
+                    primaryLanguage = map["primaryLanguage"] as? String,
+                    languageConfidence = (map["languageConfidence"] as? Number)?.toFloat(),
+                    languageUpdatedAt = (map["languageUpdatedAt"] as? Number)?.toLong()
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Error parsing video data: ${e.message}")
