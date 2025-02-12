@@ -73,6 +73,7 @@ import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.zIndex
 
 private const val TAG = "MainScreen"
 
@@ -144,6 +145,22 @@ fun MainScreen(
         targetValue = if (showMap) mapPanelHeightPercent else 0f,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "Map Panel Animation"
+    )
+
+    // Add these state declarations with the other states at the top
+    var showScoreOverlay by remember { mutableStateOf(false) }
+    val scoreOverlayAlpha by animateFloatAsState(
+        targetValue = if (showScoreOverlay) 0.95f else 0f,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "Score Overlay Animation"
+    )
+    val scoreScale by animateFloatAsState(
+        targetValue = if (showScoreOverlay) 1f else 0.8f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "Score Scale Animation"
     )
 
     // Get comments state from viewModel
@@ -687,64 +704,109 @@ fun MainScreen(
             commentReplies = commentReplies
         )
 
-        // Score Display overlay at bottom of video (keep this outside the animated overlay)
-        if (hasGuessedCurrentVideo) {
+        // Move the score overlay to be the very last element in the Box
+        if (hasGuessedCurrentVideo && showScoreOverlay) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.3f))
-                    .padding(8.dp)
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = scoreOverlayAlpha * 0.7f))
+                    .clickable { showScoreOverlay = false }
+                    .zIndex(100f)
+                    .graphicsLayer { 
+                        // Remove zIndex from here
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    modifier = Modifier
+                        .padding(32.dp)
+                        .graphicsLayer {
+                            scaleX = scoreScale
+                            scaleY = scoreScale
+                            alpha = scoreOverlayAlpha
+                        },
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 16.dp // Increased elevation for more depth
                 ) {
-                    // Total Score
                     Column(
-                        horizontalAlignment = Alignment.Start
+                        modifier = Modifier
+                            .padding(32.dp)
+                            .width(IntrinsicSize.Min),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(24.dp) // Increased spacing
                     ) {
-                        Text(
-                            text = "Total Score",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            text = "${viewModel.currentScore}",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White
-                        )
-                    }
-
-                    // Last Guess Score and Distance
-                    viewModel.lastGuessScore?.let { score ->
-                        Column(
-                            horizontalAlignment = Alignment.End
+                        // Score Badge - Made larger and more prominent
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp) // Increased size
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "SCORE",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = "${viewModel.lastGuessScore ?: 0}",
+                                    style = MaterialTheme.typography.displayMedium, // Larger text
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+
+                        // Distance with icon
+                        viewModel.lastGuessDistance?.let { distance ->
                             Row(
+                                horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                modifier = Modifier.padding(bottom = 8.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Add,
+                                    imageVector = Icons.Default.Place,
                                     contentDescription = null,
-                                    tint = Color.Green,
-                                    modifier = Modifier.size(16.dp)
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                Text(
-                                    text = "$score",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Color.Green
-                                )
-                            }
-                            viewModel.lastGuessDistance?.let { distance ->
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = viewModel.formatDistance(distance),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                        }
+
+                        // Next Video Icon Button - More modern and minimal
+                        IconButton(
+                            onClick = { 
+                                showScoreOverlay = false
+                                showMap = false
+                                viewModel.switchToNextVideo()
+                                selectedLocation = null
+                                hasGuessedCurrentVideo = false
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.primary,
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowForward,
+                                contentDescription = "Next Video",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(32.dp)
+                            )
                         }
                     }
                 }
@@ -904,6 +966,7 @@ fun MainScreen(
                                     selectedLocation?.let { location ->
                                         viewModel.submitGuess(location)
                                         hasGuessedCurrentVideo = true
+                                        showScoreOverlay = true
                                     }
                                 },
                                 modifier = Modifier
