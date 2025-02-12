@@ -129,6 +129,23 @@ fun MainScreen(
         label = "Overlay Animation"
     )
 
+    // State declarations for map and guessing functionality
+    var selectedLocation by remember { mutableStateOf<LatLng?>(null) }
+    var showMap by remember { mutableStateOf(false) }
+    var hasGuessedCurrentVideo by remember { mutableStateOf(false) }
+    var swipeOffset by remember { mutableStateOf(0f) }
+    var isSwipeInProgress by remember { mutableStateOf(false) }
+    var lastDragDirection by remember { mutableStateOf(0f) }
+    var mapPanelHeightPercent by remember { mutableStateOf(0.6f) }
+    var isMapLoaded by remember { mutableStateOf(false) }
+    
+    // Animation for map panel height
+    val animatedMapHeight by animateFloatAsState(
+        targetValue = if (showMap) mapPanelHeightPercent else 0f,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "Map Panel Animation"
+    )
+
     // Get comments state from viewModel
     val comments by viewModel.comments.collectAsStateWithLifecycle(
         initialValue = emptyList(),
@@ -281,6 +298,10 @@ fun MainScreen(
     // Handle current video changes
     LaunchedEffect(viewModel.currentVideoUrl) {
         viewModel.currentVideoUrl?.let { video ->
+            // Reset guessing state for new video
+            selectedLocation = null
+            hasGuessedCurrentVideo = false
+            
             currentPlayer.apply {
                 stop()
                 clearMediaItems()
@@ -338,30 +359,12 @@ fun MainScreen(
         }
     }
 
-    var selectedLocation by remember { mutableStateOf<LatLng?>(null) }
-    var showMap by remember { mutableStateOf(false) }
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(
             viewModel.currentVideoUrl?.location ?: LatLng(0.0, 0.0),
             2f
         )
     }
-
-    var swipeOffset by remember { mutableStateOf(0f) }
-    var isSwipeInProgress by remember { mutableStateOf(false) }
-    var hasGuessedCurrentVideo by remember { mutableStateOf(false) }
-    var lastDragDirection by remember { mutableStateOf(0f) }
-    
-    // Animation for map panel
-    var mapPanelHeightPercent by remember { mutableStateOf(0.6f) }
-    val animatedMapHeight by animateFloatAsState(
-        targetValue = if (showMap) mapPanelHeightPercent else 0f,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "Map Panel Animation"
-    )
-
-    // Add these near the top of the MainScreen composable with other state variables
-    var isMapLoaded by remember { mutableStateOf(false) }
 
     // Update the LaunchedEffect for map preloading
     LaunchedEffect(Unit) {
@@ -406,6 +409,7 @@ fun MainScreen(
                             if (swipeOffset < -200) {  // Reduced threshold for easier swiping
                                 viewModel.switchToNextVideo()
                                 selectedLocation = null
+                                hasGuessedCurrentVideo = false  // Reset guessing state
                                 showMap = false
                             }
                             swipeOffset = 0f
@@ -622,6 +626,49 @@ fun MainScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // Map Pull Handle (only show when map is hidden)
+        if (!showMap) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .padding(bottom = 8.dp)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragStart = { /* start drag */ },
+                            onDragEnd = {
+                                if (mapPanelHeightPercent > 0.1f) {
+                                    showMap = true
+                                }
+                                mapPanelHeightPercent = 0.6f // Reset to default height
+                            },
+                            onDragCancel = {
+                                mapPanelHeightPercent = 0.6f // Reset to default height
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                // Convert drag to height percentage (negative dragAmount means upward)
+                                mapPanelHeightPercent = (-dragAmount / 1000f)
+                                    .coerceIn(0f, 0.6f)
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                // Pull up indicator
+                Box(
+                    modifier = Modifier
+                        .width(32.dp)
+                        .height(4.dp)
+                        .background(
+                            Color.White.copy(alpha = 0.5f),
+                            RoundedCornerShape(2.dp)
+                        )
+                )
             }
         }
 
@@ -869,19 +916,6 @@ fun MainScreen(
                     }
                 }
             }
-        }
-
-        // Show/Hide Map Button
-        FloatingActionButton(
-            onClick = { showMap = !showMap },
-            modifier = Modifier
-                .padding(16.dp)
-                .align(Alignment.BottomEnd)
-        ) {
-            Icon(
-                imageVector = if (showMap) Icons.Default.Close else Icons.Default.Map,
-                contentDescription = if (showMap) "Hide Map" else "Show Map"
-            )
         }
 
         // Error message
