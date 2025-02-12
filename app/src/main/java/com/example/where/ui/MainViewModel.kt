@@ -457,8 +457,9 @@ class MainViewModel @Inject constructor(
                 videoToTest?.let { video ->
                     Log.d("LangTest", "Starting language analysis for video: ${video.id}")
                     Log.d("LangTest", "Video URL: ${video.url}")
+                    Log.d("LangTest", "Thumbnail URL: ${video.thumbnailUrl}")
                     
-                    val analysis = languageDetector.analyzeVideoForLanguage(video.url)
+                    val analysis = languageDetector.analyzeVideoForLanguage(video.url, video.thumbnailUrl)
                     
                     // Log comprehensive results
                     Log.d("LangTest", """
@@ -515,8 +516,10 @@ class MainViewModel @Inject constructor(
                     try {
                         _processingStatus.value = "Processing video ${processed + 1}/${videos.size}: ${video.id}"
                         Log.d(TAG, "=== Starting processing for video ${video.id} ===")
+                        Log.d(TAG, "Video URL: ${video.url}")
+                        Log.d(TAG, "Thumbnail URL: ${video.thumbnailUrl}")
                         
-                        val analysis = languageDetector.analyzeVideoForLanguage(video.url)
+                        val analysis = languageDetector.analyzeVideoForLanguage(video.url, video.thumbnailUrl)
                         
                         // Only update if we have successful detections and good confidence
                         if (analysis.successfulDetections > 0 && analysis.confidence >= 0.3f) {

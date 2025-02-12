@@ -271,12 +271,13 @@ class LanguageDetector(private val context: Context) {
         return displayName
     }
 
-    suspend fun analyzeVideoForLanguage(videoUrl: String): VideoLanguageAnalysis = withContext(Dispatchers.IO) {
+    suspend fun analyzeVideoForLanguage(videoUrl: String, thumbnailUrl: String? = null): VideoLanguageAnalysis = withContext(Dispatchers.IO) {
         Log.d(TAG, "Starting video analysis for language detection: $videoUrl")
         
-        val retriever = android.media.MediaMetadataRetriever()
+        var retriever = android.media.MediaMetadataRetriever()
         
         try {
+            // Try video analysis first
             retriever.setDataSource(videoUrl, mapOf(
                 "User-Agent" to "Mozilla/5.0",
                 "Connection" to "keep-alive"
@@ -292,27 +293,69 @@ class LanguageDetector(private val context: Context) {
                 Log.e(TAG, "Error getting duration metadata: ${e.message}")
             }
 
-            // Fallback: If duration is 0, try to determine it through frame extraction
-            if (duration == 0L) {
+            // If duration is 0 and we have a thumbnail URL, use that as last resort
+            if (duration == 0L && !thumbnailUrl.isNullOrBlank()) {
+                Log.d(TAG, "Duration is 0, attempting to use thumbnail as last resort...")
+                
+                // Release the current retriever since we won't need it anymore
                 try {
-                    Log.d(TAG, "Attempting to determine duration through frame extraction...")
-                    // Try different time positions to find the video length
-                    val timePositions = listOf(60000000L, 30000000L, 15000000L, 5000000L) // 60s, 30s, 15s, 5s in microseconds
-                    
-                    for (timePosition in timePositions) {
-                        val testFrame = retriever.getFrameAtTime(timePosition, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                        if (testFrame != null) {
-                            duration = timePosition / 1000 // Convert microseconds to milliseconds
-                            testFrame.recycle()
-                            Log.d(TAG, "Video is at least ${duration/1000}s long based on frame extraction")
-                            break
+                    retriever.release()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error releasing MediaMetadataRetriever", e)
+                }
+
+                try {
+                    // Use URL connection to download the image
+                    val url = java.net.URL(thumbnailUrl)
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.doInput = true
+                    connection.connect()
+
+                    val inputStream = connection.inputStream
+                    val thumbnail = android.graphics.BitmapFactory.decodeStream(inputStream)
+                    inputStream.close()
+                    connection.disconnect()
+
+                    if (thumbnail != null) {
+                        Log.d(TAG, "Successfully loaded thumbnail, attempting language detection")
+                        val result = processFrame(thumbnail)
+                        thumbnail.recycle()
+                        
+                        if (result != null) {
+                            Log.d(TAG, "Successfully detected language from thumbnail: ${result.displayName}")
+                            return@withContext VideoLanguageAnalysis(
+                                detectedLanguages = mapOf(result.languageCode to 1),
+                                confidence = result.confidence,
+                                primaryLanguage = result.languageCode,
+                                processedFrames = 1,
+                                successfulDetections = 1,
+                                errors = emptyList()
+                            )
                         }
                     }
+                    Log.d(TAG, "Could not detect language from thumbnail")
+                    return@withContext VideoLanguageAnalysis(
+                        detectedLanguages = emptyMap(),
+                        confidence = 0f,
+                        primaryLanguage = "unknown",
+                        processedFrames = 0,
+                        successfulDetections = 0,
+                        errors = listOf("Failed to detect language from thumbnail")
+                    )
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error in fallback duration check: ${e.message}")
+                    Log.e(TAG, "Error processing thumbnail: ${e.message}")
+                    return@withContext VideoLanguageAnalysis(
+                        detectedLanguages = emptyMap(),
+                        confidence = 0f,
+                        primaryLanguage = "unknown",
+                        processedFrames = 0,
+                        successfulDetections = 0,
+                        errors = listOf("Error processing thumbnail: ${e.message}")
+                    )
                 }
             }
-            
+
+            // If we have valid duration, proceed with video analysis
             val width = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
             val height = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
             
@@ -320,12 +363,6 @@ class LanguageDetector(private val context: Context) {
             
             if (width <= 0 || height <= 0) {
                 throw Exception("Invalid video dimensions: ${width}x${height}")
-            }
-
-            // If we still have 0 duration, set a reasonable default
-            if (duration == 0L) {
-                duration = 30000L // Default to 30 seconds if we can't determine duration
-                Log.d(TAG, "Using default duration of 30 seconds")
             }
 
             val detectedLanguages = mutableMapOf<String, Int>()
