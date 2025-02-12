@@ -700,11 +700,58 @@ class VideoRepository @Inject constructor(
 
     suspend fun getVideo(videoId: String): Video? {
         return try {
-            val doc = videosCollection.document(videoId).get().await()
-            doc.data?.let { Video.fromMap(it) }
+            val doc = firestore.collection("videos")
+                .document(videoId)
+                .get()
+                .await()
+            
+            if (!doc.exists()) {
+                Log.e("VideoRepository", "Video $videoId not found")
+                return null
+            }
+
+            val data = doc.data
+            if (data != null) {
+                Video.fromMap(data)
+            } else {
+                Log.e("VideoRepository", "No data for video $videoId")
+                null
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting video $videoId: ${e.message}")
+            Log.e("VideoRepository", "Error getting video $videoId", e)
             null
+        }
+    }
+
+    suspend fun getAllVideos(): List<Video> {
+        return try {
+            firestore.collection("videos")
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+        } catch (e: Exception) {
+            Log.e("VideoRepository", "Error getting all videos", e)
+            emptyList()
+        }
+    }
+
+    suspend fun updateVideoLanguage(videoId: String, language: String, confidence: Float) {
+        try {
+            firestore.collection("videos")
+                .document(videoId)
+                .update(
+                    mapOf(
+                        "detectedLanguage" to language,
+                        "languageConfidence" to confidence,
+                        "languageDetectedAt" to System.currentTimeMillis()
+                    )
+                )
+                .await()
+            Log.d("VideoRepository", "Updated language for video $videoId: $language ($confidence)")
+        } catch (e: Exception) {
+            Log.e("VideoRepository", "Error updating video language", e)
+            throw e
         }
     }
 } 

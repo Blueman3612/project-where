@@ -790,6 +790,23 @@ fun MainScreen(
                                 modifier = Modifier.size(32.dp)
                             )
                         }
+
+                        // Add Language Detection Test Button
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { viewModel.testLanguageDetection() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Test Language Detection")
+                        }
+
+                        // Optional: Add button for processing all videos
+                        Button(
+                            onClick = { viewModel.processAllVideosForLanguage() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Process All Videos")
+                        }
                     }
                 }
             }

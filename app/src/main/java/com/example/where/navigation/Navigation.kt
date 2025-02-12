@@ -31,6 +31,8 @@ import com.example.where.ui.video.VideoScreen
 import com.example.where.ui.messages.MessagesScreen
 import com.example.where.ui.components.TopBar
 import com.google.firebase.auth.FirebaseAuth
+import com.example.where.ui.MainViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 
 sealed class Screen(
     val route: String,
@@ -170,6 +172,7 @@ fun Navigation(
             }
             
             composable(Screen.Compete.route) {
+                val viewModel: MainViewModel = hiltViewModel()
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -189,24 +192,42 @@ fun Navigation(
                         )
                         
                         Text(
-                            text = "Compete Mode",
+                            text = "Language Detection Test",
                             style = MaterialTheme.typography.headlineLarge,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         
                         Text(
-                            text = "Coming Soon",
+                            text = "Test language detection on videos",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
                         
                         Text(
-                            text = "Challenge your friends and compete with players worldwide in exciting location-guessing battles. Stay tuned for updates!",
+                            text = "Use these buttons to test language detection on individual videos or process your entire video collection.",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // Add Language Detection Test Button
+                        Button(
+                            onClick = { viewModel.testLanguageDetection() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Test Language Detection")
+                        }
+
+                        // Button for processing all videos
+                        Button(
+                            onClick = { viewModel.processAllVideosForLanguage() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Process All Videos")
+                        }
                     }
                 }
             }

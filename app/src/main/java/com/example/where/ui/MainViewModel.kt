@@ -1,5 +1,6 @@
 package com.example.where.ui
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -15,6 +16,7 @@ import com.example.where.util.LanguageDetector
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +30,8 @@ import kotlin.math.*
 class MainViewModel @Inject constructor(
     private val videoRepository: VideoRepository,
     private val commentRepository: CommentRepository,
-    private val auth: FirebaseAuth
+    private val auth: FirebaseAuth,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _currentVideoUrl = MutableStateFlow<Video?>(null)
@@ -85,7 +88,7 @@ class MainViewModel @Inject constructor(
     // Add a job to track the comments collection
     private var commentsJob: Job? = null
 
-    private val languageDetector = LanguageDetector()
+    private val languageDetector = LanguageDetector(context)
     private val _detectedLanguage = MutableStateFlow<LanguageDetector.LanguageResult?>(null)
     val detectedLanguage: StateFlow<LanguageDetector.LanguageResult?> = _detectedLanguage.asStateFlow()
 
@@ -433,6 +436,88 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             val result = languageDetector.detectLanguageFromImage(bitmap)
             _detectedLanguage.value = result
+        }
+    }
+
+    // Add this function to test language detection on a specific video
+    fun testLanguageDetection() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                // Always use the specific test video
+                Log.d("LangTest", "Fetching specific test video")
+                val videoToTest = videoRepository.getVideo("J2lNFWBbhvV7zyKQIxm4")
+
+                videoToTest?.let { video ->
+                    Log.d("LangTest", "Starting language analysis for video: ${video.id}")
+                    Log.d("LangTest", "Video URL: ${video.url}")
+                    
+                    val analysis = languageDetector.analyzeVideoForLanguage(video.url)
+                    
+                    // Log comprehensive results
+                    Log.d("LangTest", """
+                        Language Analysis Results for video ${video.id}:
+                        ----------------------------------------
+                        Primary Language: ${analysis.primaryLanguage}
+                        Confidence: ${analysis.confidence}
+                        Processed Frames: ${analysis.processedFrames}
+                        Successful Detections: ${analysis.successfulDetections}
+                        
+                        Detected Languages:
+                        ${analysis.detectedLanguages.entries.joinToString("\n") { 
+                            "  ${it.key}: ${it.value} detections"
+                        }}
+                        
+                        Errors (${analysis.errors.size}):
+                        ${analysis.errors.joinToString("\n") { "  $it" }}
+                        ----------------------------------------
+                    """.trimIndent())
+
+                    // Save results to video document
+                    videoRepository.updateVideoLanguage(
+                        videoId = video.id,
+                        language = analysis.primaryLanguage,
+                        confidence = analysis.confidence
+                    )
+                    
+                    Log.d("LangTest", "Analysis complete and saved to Firestore")
+                }
+            } catch (e: Exception) {
+                Log.e("LangTest", "Error testing language detection", e)
+                _error.value = "Error testing language detection: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    // Add this function to process all videos
+    fun processAllVideosForLanguage() {
+        viewModelScope.launch {
+            try {
+                Log.d("LangTest", "Starting batch processing of all videos")
+                val videos = videoRepository.getAllVideos()
+                Log.d("LangTest", "Found ${videos.size} videos to process")
+
+                videos.forEachIndexed { index, video ->
+                    Log.d("LangTest", "Processing video ${index + 1}/${videos.size}: ${video.id}")
+                    try {
+                        val analysis = languageDetector.analyzeVideoForLanguage(video.url)
+                        videoRepository.updateVideoLanguage(
+                            videoId = video.id,
+                            language = analysis.primaryLanguage,
+                            confidence = analysis.confidence
+                        )
+                        Log.d("LangTest", "Successfully processed video ${video.id}")
+                    } catch (e: Exception) {
+                        Log.e("LangTest", "Error processing video ${video.id}", e)
+                    }
+                }
+                Log.d("LangTest", "Batch processing complete")
+            } catch (e: Exception) {
+                Log.e("LangTest", "Error in batch processing", e)
+                _error.value = "Error processing videos: ${e.message}"
+            }
         }
     }
 
