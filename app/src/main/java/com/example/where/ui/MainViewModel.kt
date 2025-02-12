@@ -1,5 +1,6 @@
 package com.example.where.ui
 
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +11,7 @@ import com.example.where.data.model.Video
 import com.example.where.data.model.Comment
 import com.example.where.data.repository.VideoRepository
 import com.example.where.data.repository.CommentRepository
+import com.example.where.util.LanguageDetector
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,9 +20,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 import kotlin.math.*
-import kotlinx.coroutines.Job
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -29,37 +31,36 @@ class MainViewModel @Inject constructor(
     private val auth: FirebaseAuth
 ) : ViewModel() {
 
-    private var _currentVideoUrl = mutableStateOf<Video?>(null)
-    val currentVideoUrl: Video? get() = _currentVideoUrl.value
+    private val _currentVideoUrl = MutableStateFlow<Video?>(null)
+    val currentVideoUrl: StateFlow<Video?> = _currentVideoUrl.asStateFlow()
 
-    private var _currentVideo = mutableStateOf<Video?>(null)
-    val currentVideo: Video? get() = _currentVideo.value
+    private val _currentVideo = MutableStateFlow<Video?>(null)
+    val currentVideo: StateFlow<Video?> = _currentVideo.asStateFlow()
     
-    private var _nextVideo = mutableStateOf<Video?>(null)
-    val nextVideo: Video? get() = _nextVideo.value
+    private val _nextVideo = MutableStateFlow<Video?>(null)
+    val nextVideo: StateFlow<Video?> = _nextVideo.asStateFlow()
     
-    private var _isLoading = mutableStateOf(false)
-    val isLoading: Boolean get() = _isLoading.value
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    var error by mutableStateOf<String?>(null)
-        private set
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
         
-    var currentScore by mutableStateOf(0)
-        private set
+    private val _currentScore = MutableStateFlow(0)
+    val currentScore: StateFlow<Int> = _currentScore.asStateFlow()
         
-    var lastGuessScore by mutableStateOf<Int?>(null)
-        private set
+    private val _lastGuessScore = MutableStateFlow<Int?>(null)
+    val lastGuessScore: StateFlow<Int?> = _lastGuessScore.asStateFlow()
         
-    var lastGuessDistance by mutableStateOf<Double?>(null)
-        private set
+    private val _lastGuessDistance = MutableStateFlow<Double?>(null)
+    val lastGuessDistance: StateFlow<Double?> = _lastGuessDistance.asStateFlow()
 
-    private val _isLiked = mutableStateOf(false)
-    val isLiked: Boolean get() = _isLiked.value
+    private val _isLiked = MutableStateFlow(false)
+    val isLiked: StateFlow<Boolean> = _isLiked.asStateFlow()
 
-    var showLikeAnimation by mutableStateOf(false)
-        private set
+    private val _showLikeAnimation = MutableStateFlow(false)
+    val showLikeAnimation: StateFlow<Boolean> = _showLikeAnimation.asStateFlow()
 
-    // Comment-related state
     private val _comments = MutableStateFlow<List<Comment>>(emptyList())
     val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
 
@@ -75,14 +76,18 @@ class MainViewModel @Inject constructor(
     private val _isLoadingComments = MutableStateFlow(false)
     val isLoadingComments: StateFlow<Boolean> = _isLoadingComments.asStateFlow()
 
+    private val _currentLikeCount = MutableStateFlow(0)
+    val currentLikeCount: StateFlow<Int> = _currentLikeCount.asStateFlow()
+
     // Use the video's comments field directly
     val commentCount: Int get() = _currentVideo.value?.comments ?: 0
 
     // Add a job to track the comments collection
     private var commentsJob: Job? = null
 
-    private val _currentLikeCount = mutableStateOf(0)
-    val currentLikeCount: Int get() = _currentLikeCount.value
+    private val languageDetector = LanguageDetector()
+    private val _detectedLanguage = MutableStateFlow<LanguageDetector.LanguageResult?>(null)
+    val detectedLanguage: StateFlow<LanguageDetector.LanguageResult?> = _detectedLanguage.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -116,6 +121,7 @@ class MainViewModel @Inject constructor(
 
     fun switchToNextVideo() {
         viewModelScope.launch {
+            _detectedLanguage.value = null
             val nextVideo = _nextVideo.value
             _currentVideo.value = nextVideo
             _currentVideoUrl.value = nextVideo
@@ -133,10 +139,10 @@ class MainViewModel @Inject constructor(
     }
 
     fun submitGuess(guessLocation: LatLng) {
-        currentVideo?.let { video ->
+        _currentVideo.value?.let { video ->
             val distanceMeters = calculateDistance(guessLocation, video.location)
             val distanceMiles = distanceMeters * 0.000621371 // Convert meters to miles
-            lastGuessDistance = distanceMiles
+            _lastGuessDistance.value = distanceMiles
             
             // Log the locations and distance for debugging
             Log.d("MainViewModel", "Guess location: ${guessLocation.latitude}, ${guessLocation.longitude}")
@@ -145,12 +151,12 @@ class MainViewModel @Inject constructor(
             
             // Calculate score based on distance
             val score = calculateScore(distanceMiles)
-            lastGuessScore = score
-            currentScore += score
+            _lastGuessScore.value = score
+            _currentScore.value += score
             
-            error = null
+            _error.value = null
         } ?: run {
-            error = "No video loaded"
+            _error.value = "No video loaded"
         }
     }
     
@@ -229,7 +235,7 @@ class MainViewModel @Inject constructor(
     fun toggleLike() {
         viewModelScope.launch {
             try {
-                currentVideo?.let { video ->
+                _currentVideo.value?.let { video ->
                     auth.currentUser?.uid?.let { userId ->
                         val newLikeState = videoRepository.toggleLike(video.id, userId)
                         _isLiked.value = newLikeState
@@ -239,7 +245,7 @@ class MainViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error toggling like: ${e.message}")
-                error = "Failed to update like"
+                _error.value = "Failed to update like"
             }
         }
     }
@@ -256,7 +262,7 @@ class MainViewModel @Inject constructor(
     }
 
     private fun loadComments() {
-        currentVideo?.let { video ->
+        _currentVideo.value?.let { video ->
             Log.d("MainViewModel", "Loading comments for video: ${video.id}, current comment count: ${video.comments}")
             viewModelScope.launch {
                 _isLoadingComments.value = true
@@ -282,7 +288,7 @@ class MainViewModel @Inject constructor(
                     _commentLikes.value = likeStates
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "Error loading comments: ${e.message}", e)
-                    error = "Failed to load comments: ${e.message}"
+                    _error.value = "Failed to load comments: ${e.message}"
                 } finally {
                     _isLoadingComments.value = false
                 }
@@ -291,12 +297,12 @@ class MainViewModel @Inject constructor(
     }
 
     fun addComment(text: String, parentId: String? = null) {
-        currentVideo?.let { video ->
+        _currentVideo.value?.let { video ->
             viewModelScope.launch {
                 try {
                     val newComment = commentRepository.addComment(video.id, text, parentId)
                     if (newComment == null) {
-                        error = "Failed to add comment"
+                        _error.value = "Failed to add comment"
                     } else {
                         if (parentId == null) {
                             // Add top-level comment
@@ -321,7 +327,7 @@ class MainViewModel @Inject constructor(
                         _currentVideo.value = video.copy(comments = video.comments + 1)
                     }
                 } catch (e: Exception) {
-                    error = "Failed to add comment: ${e.message}"
+                    _error.value = "Failed to add comment: ${e.message}"
                 }
             }
         }
@@ -341,15 +347,15 @@ class MainViewModel @Inject constructor(
                     
                     // Update the current video with decremented comment count
                     // If it's a top-level comment, also account for its replies
-                    currentVideo?.let { video ->
+                    _currentVideo.value?.let { video ->
                         val decrementAmount = if (isTopLevel) 1 + replyCount else 1
                         _currentVideo.value = video.copy(comments = video.comments - decrementAmount)
                     }
                 } else {
-                    error = "Failed to delete comment"
+                    _error.value = "Failed to delete comment"
                 }
             } catch (e: Exception) {
-                error = "Failed to delete comment: ${e.message}"
+                _error.value = "Failed to delete comment: ${e.message}"
             }
         }
     }
@@ -359,22 +365,22 @@ class MainViewModel @Inject constructor(
             try {
                 videoRepository.migrateVideoCommentCounts()
                 // After migration, reload the current video to get updated count
-                currentVideo?.let { video ->
+                _currentVideo.value?.let { video ->
                     _currentVideo.value = videoRepository.getVideo(video.id)
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error migrating comment counts: ${e.message}")
-                error = "Failed to migrate comment counts"
+                _error.value = "Failed to migrate comment counts"
             }
         }
     }
 
     fun showLikeAnimation() {
-        showLikeAnimation = true
+        _showLikeAnimation.value = true
     }
 
     fun hideLikeAnimation() {
-        showLikeAnimation = false
+        _showLikeAnimation.value = false
     }
 
     fun toggleCommentLike(commentId: String) {
@@ -402,7 +408,7 @@ class MainViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                error = "Failed to update like: ${e.message}"
+                _error.value = "Failed to update like: ${e.message}"
             }
         }
     }
@@ -418,8 +424,15 @@ class MainViewModel @Inject constructor(
                 }
                 _commentLikes.value = _commentLikes.value + likeStates
             } catch (e: Exception) {
-                error = "Failed to load replies: ${e.message}"
+                _error.value = "Failed to load replies: ${e.message}"
             }
+        }
+    }
+
+    fun detectLanguageInCurrentFrame(bitmap: Bitmap) {
+        viewModelScope.launch {
+            val result = languageDetector.detectLanguageFromImage(bitmap)
+            _detectedLanguage.value = result
         }
     }
 
@@ -429,6 +442,6 @@ class MainViewModel @Inject constructor(
         commentsJob?.cancel()
         commentsJob = null
         _comments.value = emptyList()
-        error = null
+        _error.value = null
     }
 } 

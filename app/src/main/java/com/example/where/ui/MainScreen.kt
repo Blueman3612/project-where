@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -62,6 +63,7 @@ import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import kotlin.math.roundToInt
 import com.example.where.data.model.Comment
+import com.example.where.data.model.Video
 import com.example.where.ui.components.CommentSheet
 import com.example.where.ui.components.LikeAnimation
 import com.example.where.ui.components.TopBar
@@ -72,8 +74,21 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import android.graphics.drawable.Drawable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.zIndex
+import android.graphics.Bitmap
+import android.graphics.SurfaceTexture
+import android.view.TextureView
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import com.example.where.util.LanguageDetector
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentSize
+import com.example.where.util.LanguageDetector.LanguageResult
 
 private const val TAG = "MainScreen"
 
@@ -104,6 +119,15 @@ private object MemoryTracker {
     }
 }
 
+// Add this helper function at the top level of the file
+private fun formatNumber(number: Int): String {
+    return when {
+        number >= 1_000_000 -> String.format("%.1fM", number / 1_000_000.0)
+        number >= 1_000 -> String.format("%.1fK", number / 1_000.0)
+        else -> number.toString()
+    }
+}
+
 @UnstableApi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,90 +144,7 @@ fun MainScreen(
     val preloadPlayerRef = remember { mutableStateOf<ExoPlayer?>(null) }
     val currentPlayerView = remember { mutableStateOf<WeakReference<PlayerView>?>(null) }
     
-    // Add showOverlay state
-    var showOverlay by remember { mutableStateOf(true) }
-    
-    // Animation for overlay controls
-    val offsetY by animateFloatAsState(
-        targetValue = if (showOverlay) 0f else -400f,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "Overlay Animation"
-    )
-
-    // State declarations for map and guessing functionality
-    var selectedLocation by remember { mutableStateOf<LatLng?>(null) }
-    var showMap by remember { mutableStateOf(false) }
-    var hasGuessedCurrentVideo by remember { mutableStateOf(false) }
-    var swipeOffset by remember { mutableStateOf(0f) }
-    var isSwipeInProgress by remember { mutableStateOf(false) }
-    var lastDragDirection by remember { mutableStateOf(0f) }
-    var mapPanelHeightPercent by remember { mutableStateOf(0.6f) }
-    var isMapLoaded by remember { mutableStateOf(false) }
-    
-    // Animation for map panel height
-    val animatedMapHeight by animateFloatAsState(
-        targetValue = if (showMap) mapPanelHeightPercent else 0f,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "Map Panel Animation"
-    )
-
-    // Add these state declarations with the other states at the top
-    var showScoreOverlay by remember { mutableStateOf(false) }
-    val scoreOverlayAlpha by animateFloatAsState(
-        targetValue = if (showScoreOverlay) 0.95f else 0f,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "Score Overlay Animation"
-    )
-    val scoreScale by animateFloatAsState(
-        targetValue = if (showScoreOverlay) 1f else 0.8f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "Score Scale Animation"
-    )
-
-    // Get comments state from viewModel
-    val comments by viewModel.comments.collectAsStateWithLifecycle(
-        initialValue = emptyList(),
-        lifecycleOwner = lifecycleOwner
-    )
-    val showComments by viewModel.showComments.collectAsStateWithLifecycle(
-        lifecycleOwner = lifecycleOwner
-    )
-    val isLoadingComments by viewModel.isLoadingComments.collectAsStateWithLifecycle(
-        lifecycleOwner = lifecycleOwner
-    )
-    val currentUserId = remember { Firebase.auth.currentUser?.uid }
-    val commentLikes by viewModel.commentLikes.collectAsStateWithLifecycle(
-        initialValue = emptyMap(),
-        lifecycleOwner = lifecycleOwner
-    )
-    val commentReplies by viewModel.commentReplies.collectAsStateWithLifecycle(
-        initialValue = emptyMap(),
-        lifecycleOwner = lifecycleOwner
-    )
-
-    // Calculate map bounds
-    fun calculateBounds(point1: LatLng, point2: LatLng): Pair<LatLngBounds, Float> {
-        val builder = LatLngBounds.builder()
-        builder.include(point1)
-        builder.include(point2)
-        val bounds = builder.build()
-        
-        val width = bounds.northeast.longitude - bounds.southwest.longitude
-        val height = bounds.northeast.latitude - bounds.southwest.latitude
-        val zoom = when {
-            width == 0.0 && height == 0.0 -> 15f
-            width > height -> 
-                (360.0 / (width * 2.5)).let { Math.log(it) / Math.log(2.0) }.toFloat()
-            else -> 
-                (180.0 / (height * 2.5)).let { Math.log(it) / Math.log(2.0) }.toFloat()
-        }.coerceIn(2f, 15f)
-        
-        return bounds to zoom
-    }
-
+    // Function to create optimized player
     fun createOptimizedPlayer() = ExoPlayer.Builder(context)
         .setVideoScalingMode(C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
         .setLoadControl(
@@ -311,10 +252,86 @@ fun MainScreen(
             System.gc()
         }
     }
+    
+    // Get comments state from viewModel with explicit types
+    val comments: List<Comment> by viewModel.comments.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val showComments: Boolean by viewModel.showComments.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val isLoadingComments: Boolean by viewModel.isLoadingComments.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val currentUserId = remember { Firebase.auth.currentUser?.uid }
+    val commentLikes: Map<String, Boolean> by viewModel.commentLikes.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val commentReplies: Map<String, List<Comment>> by viewModel.commentReplies.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
 
-    // Handle current video changes
-    LaunchedEffect(viewModel.currentVideoUrl) {
-        viewModel.currentVideoUrl?.let { video ->
+    // Update state collection with proper lifecycle owner and explicit types
+    val lastGuessScore: Int? by viewModel.lastGuessScore.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val lastGuessDistance: Double? by viewModel.lastGuessDistance.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val currentVideoUrl: Video? by viewModel.currentVideoUrl.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+
+    // Update state collection for video URL with explicit types
+    val currentVideo: Video? by viewModel.currentVideo.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val isLoading: Boolean by viewModel.isLoading.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val error: String? by viewModel.error.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val showLikeAnimation: Boolean by viewModel.showLikeAnimation.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val currentLikeCount: Int by viewModel.currentLikeCount.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val isLiked: Boolean by viewModel.isLiked.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val nextVideo: Video? by viewModel.nextVideo.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+    val detectedLanguage: LanguageDetector.LanguageResult? by viewModel.detectedLanguage.collectAsStateWithLifecycle<LanguageDetector.LanguageResult?>(
+        lifecycleOwner = lifecycleOwner
+    )
+
+    // Add this for commentCount
+    val commentCount = remember(currentVideo) { currentVideo?.comments ?: 0 }
+
+    // Update camera position state with remember
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(
+            currentVideo?.location ?: LatLng(0.0, 0.0),
+            2f
+        )
+    }
+
+    // Add these state declarations with rememberSaveable
+    var showOverlay by rememberSaveable { mutableStateOf(true) }
+    var selectedLocation by rememberSaveable { mutableStateOf<LatLng?>(null) }
+    var showMap by rememberSaveable { mutableStateOf(false) }
+    var hasGuessedCurrentVideo by rememberSaveable { mutableStateOf(false) }
+    var swipeOffset by remember { mutableStateOf(0f) }
+    var isSwipeInProgress by remember { mutableStateOf(false) }
+    var lastDragDirection by remember { mutableStateOf(0f) }
+    var mapPanelHeightPercent by remember { mutableStateOf(0.6f) }
+    var isMapLoaded by remember { mutableStateOf(false) }
+    var showScoreOverlay by rememberSaveable { mutableStateOf(false) }
+
+    // Animation for overlay controls
+    val offsetY by animateFloatAsState(
+        targetValue = if (showOverlay) 0f else -400f,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "Overlay Animation"
+    )
+
+    // Animation for map panel height
+    val animatedMapHeight by animateFloatAsState(
+        targetValue = if (showMap) mapPanelHeightPercent else 0f,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "Map Panel Animation"
+    )
+
+    val scoreOverlayAlpha by animateFloatAsState(
+        targetValue = if (showScoreOverlay) 0.95f else 0f,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "Score Overlay Animation"
+    )
+    val scoreScale by animateFloatAsState(
+        targetValue = if (showScoreOverlay) 1f else 0.8f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "Score Scale Animation"
+    )
+
+    // Update video URL handling
+    LaunchedEffect(currentVideo) {
+        currentVideo?.let { video ->
             // Reset guessing state for new video
             selectedLocation = null
             hasGuessedCurrentVideo = false
@@ -322,11 +339,6 @@ fun MainScreen(
             currentPlayer.apply {
                 stop()
                 clearMediaItems()
-            }
-            
-            currentPlayerView.value?.get()?.player = null
-            
-            currentPlayer.apply {
                 setMediaItem(MediaItem.fromUri(video.url))
                 prepare()
                 playWhenReady = true
@@ -335,52 +347,22 @@ fun MainScreen(
             currentPlayerView.value?.get()?.apply {
                 hideController()
                 setKeepContentOnPlayerReset(true)
-                
-                // Set the default background color first
                 setShutterBackgroundColor(AndroidColor.BLACK)
-                
-                // Set the thumbnail as the background if available
-                viewModel.currentVideoUrl?.thumbnailUrl?.let { thumbnailUrl ->
-                    // Create a drawable from the thumbnail URL using Glide
-                    Glide.with(context)
-                        .load(thumbnailUrl)
-                        .into(object : CustomTarget<Drawable>() {
-                            override fun onResourceReady(
-                                resource: Drawable,
-                                transition: Transition<in Drawable>?
-                            ) {
-                                defaultArtwork = resource
-                                setDefaultArtwork(resource)
-                            }
-                            
-                            override fun onLoadCleared(placeholder: Drawable?) {
-                                // Do nothing
-                            }
-                        })
-                }
-                
                 player = currentPlayer
                 player?.play()
             }
         }
     }
 
-    // Handle preloading of next video
-    LaunchedEffect(viewModel.nextVideo) {
-        viewModel.nextVideo?.let { video ->
+    // Update next video handling
+    LaunchedEffect(nextVideo) {
+        nextVideo?.let { video ->
             preloadPlayer.apply {
                 setMediaItem(MediaItem.fromUri(video.url))
                 prepare()
                 playWhenReady = false
             }
         }
-    }
-
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            viewModel.currentVideoUrl?.location ?: LatLng(0.0, 0.0),
-            2f
-        )
     }
 
     // Update the LaunchedEffect for map preloading
@@ -450,7 +432,7 @@ fun MainScreen(
                     )
                 }
         ) {
-            if (viewModel.isLoading) {
+            if (isLoading) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -490,7 +472,7 @@ fun MainScreen(
             }
 
             // Like Animation overlay
-            if (viewModel.showLikeAnimation) {
+            if (showLikeAnimation) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -523,7 +505,7 @@ fun MainScreen(
                         Row(
                             modifier = Modifier
                                 .clickable { 
-                                    viewModel.currentVideoUrl?.let { video ->
+                                    currentVideo?.let { video ->
                                         onNavigateToProfile(video.authorId)
                                     }
                                 },
@@ -549,7 +531,7 @@ fun MainScreen(
 
                             // Username
                             Text(
-                                text = viewModel.currentVideoUrl?.authorUsername ?: "Unknown",
+                                text = currentVideo?.authorUsername ?: "Unknown",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color.White,
                                 modifier = Modifier
@@ -574,7 +556,7 @@ fun MainScreen(
                             ) {
                                 // Like Count
                                 Text(
-                                    text = viewModel.formatNumber(viewModel.currentLikeCount),
+                                    text = formatNumber(currentLikeCount),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = Color.White,
                                     modifier = Modifier
@@ -596,9 +578,9 @@ fun MainScreen(
                                         )
                                 ) {
                                     Icon(
-                                        imageVector = if (viewModel.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                        contentDescription = if (viewModel.isLiked) "Unlike" else "Like",
-                                        tint = if (viewModel.isLiked) Color.Red else Color.White,
+                                        imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                        contentDescription = if (isLiked) "Unlike" else "Like",
+                                        tint = if (isLiked) Color.Red else Color.White,
                                         modifier = Modifier.size(28.dp)
                                     )
                                 }
@@ -611,7 +593,7 @@ fun MainScreen(
                             ) {
                                 // Comments Count
                                 Text(
-                                        text = viewModel.formatNumber(viewModel.commentCount),
+                                    text = formatNumber(commentCount),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = Color.White,
                                     modifier = Modifier
@@ -756,15 +738,15 @@ fun MainScreen(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                 )
                                 Text(
-                                    text = "${viewModel.lastGuessScore ?: 0}",
-                                    style = MaterialTheme.typography.displayMedium, // Larger text
+                                    text = "${lastGuessScore}",
+                                    style = MaterialTheme.typography.displayMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
                         }
 
                         // Distance with icon
-                        viewModel.lastGuessDistance?.let { distance ->
+                        lastGuessDistance?.let { distance ->
                             Row(
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically,
@@ -785,7 +767,7 @@ fun MainScreen(
                             }
                         }
 
-                        // Next Video Icon Button - More modern and minimal
+                        // Next Video Icon Button
                         IconButton(
                             onClick = { 
                                 showScoreOverlay = false
@@ -931,7 +913,7 @@ fun MainScreen(
 
                             // Show actual location and polyline when guess is submitted
                             if (hasGuessedCurrentVideo && selectedLocation != null) {
-                                viewModel.currentVideoUrl?.let { video ->
+                                currentVideo?.let { video ->
                                     // Actual location marker
                                     Marker(
                                         state = MarkerState(position = video.location),
@@ -982,7 +964,7 @@ fun MainScreen(
         }
 
         // Error message
-        viewModel.error?.let { error ->
+        error?.let { error ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1009,5 +991,128 @@ fun MainScreen(
                 CircularProgressIndicator()
             }
         }
+
+        // Add this inside the Box containing the video player, after the overlay controls
+        detectedLanguage?.let { language ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Translate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = language.displayName,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+        }
+
+        // Add this LaunchedEffect for frame capture
+        LaunchedEffect(currentVideo) {
+            while (isActive && currentVideo != null) {
+                delay(2000) // Check every 2 seconds
+                currentPlayerView.value?.get()?.let { playerView ->
+                    try {
+                        Log.d(TAG, "Starting frame capture. PlayerView size: ${playerView.width}x${playerView.height}")
+                        
+                        // Ensure valid dimensions
+                        if (playerView.width <= 0 || playerView.height <= 0) {
+                            Log.e(TAG, "Invalid PlayerView dimensions")
+                            return@let
+                        }
+
+                        // Use higher resolution for better text recognition
+                        val scaleFactor = 1.0f // Capture at full resolution
+                        val width = (playerView.width * scaleFactor).toInt()
+                        val height = (playerView.height * scaleFactor).toInt()
+                        
+                        // Create bitmap with specific config for better quality
+                        val bitmap = Bitmap.createBitmap(
+                            width,
+                            height,
+                            Bitmap.Config.ARGB_8888
+                        )
+
+                        // Draw the player view onto the bitmap
+                        val canvas = android.graphics.Canvas(bitmap)
+                        
+                        // Make sure the view is visible and ready
+                        playerView.alpha = 1f
+                        playerView.visibility = View.VISIBLE
+                        
+                        // Wait for the next frame
+                        delay(33) // Approximately one frame duration
+                        
+                        // Draw the view
+                        playerView.draw(canvas)
+
+                        // Validate bitmap
+                        if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
+                            Log.e(TAG, "Invalid bitmap after capture")
+                            return@let
+                        }
+
+                        Log.d(TAG, "Successfully captured frame with size: ${bitmap.width}x${bitmap.height}")
+                        viewModel.detectLanguageInCurrentFrame(bitmap)
+                        bitmap.recycle()
+                        
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error capturing frame: ${e.message}", e)
+                    }
+                } ?: Log.e(TAG, "PlayerView reference is null")
+            }
+        }
+
+        // Video player loading state
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = Color.White
+                )
+            }
+        }
     }
+}
+
+// Calculate map bounds
+fun calculateBounds(point1: LatLng, point2: LatLng): Pair<LatLngBounds, Float> {
+    val builder = LatLngBounds.builder()
+    builder.include(point1)
+    builder.include(point2)
+    val bounds = builder.build()
+    
+    val width = bounds.northeast.longitude - bounds.southwest.longitude
+    val height = bounds.northeast.latitude - bounds.southwest.latitude
+    val zoom = when {
+        width == 0.0 && height == 0.0 -> 15f
+        width > height -> 
+            (360.0 / (width * 2.5)).let { Math.log(it) / Math.log(2.0) }.toFloat()
+        else -> 
+            (180.0 / (height * 2.5)).let { Math.log(it) / Math.log(2.0) }.toFloat()
+    }.coerceIn(2f, 15f)
+    
+    return bounds to zoom
 } 
