@@ -89,6 +89,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentSize
 import com.example.where.util.LanguageDetector.LanguageResult
+import androidx.compose.foundation.BorderStroke
 
 private const val TAG = "MainScreen"
 
@@ -791,21 +792,35 @@ fun MainScreen(
                             )
                         }
 
-                        // Add Language Detection Test Button
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { viewModel.testLanguageDetection() },
-                            modifier = Modifier.fillMaxWidth()
+                        // Add Language Hint Button in the top-right corner
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.TopEnd
                         ) {
-                            Text("Test Language Detection")
-                        }
-
-                        // Optional: Add button for processing all videos
-                        Button(
-                            onClick = { viewModel.processAllVideosForLanguage() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Process All Videos")
+                            currentVideo?.primaryLanguage?.let { language ->
+                                IconButton(
+                                    onClick = {
+                                        // Language detection happens automatically via frame capture
+                                    },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                                            CircleShape
+                                        )
+                                        .clip(CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Translate,
+                                        contentDescription = "Language Hint",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1009,8 +1024,9 @@ fun MainScreen(
             }
         }
 
+        // Remove the LaunchedEffect for frame capture
         // Add this inside the Box containing the video player, after the overlay controls
-        detectedLanguage?.let { language ->
+        currentVideo?.primaryLanguage?.let { language ->
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -1020,7 +1036,11 @@ fun MainScreen(
                     modifier = Modifier
                         .padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                    )
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1033,68 +1053,12 @@ fun MainScreen(
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
-                            text = language.displayName,
+                            text = getLanguageDisplayName(language),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
-            }
-        }
-
-        // Add this LaunchedEffect for frame capture
-        LaunchedEffect(currentVideo) {
-            while (isActive && currentVideo != null) {
-                delay(2000) // Check every 2 seconds
-                currentPlayerView.value?.get()?.let { playerView ->
-                    try {
-                        Log.d(TAG, "Starting frame capture. PlayerView size: ${playerView.width}x${playerView.height}")
-                        
-                        // Ensure valid dimensions
-                        if (playerView.width <= 0 || playerView.height <= 0) {
-                            Log.e(TAG, "Invalid PlayerView dimensions")
-                            return@let
-                        }
-
-                        // Use higher resolution for better text recognition
-                        val scaleFactor = 1.0f // Capture at full resolution
-                        val width = (playerView.width * scaleFactor).toInt()
-                        val height = (playerView.height * scaleFactor).toInt()
-                        
-                        // Create bitmap with specific config for better quality
-                        val bitmap = Bitmap.createBitmap(
-                            width,
-                            height,
-                            Bitmap.Config.ARGB_8888
-                        )
-
-                        // Draw the player view onto the bitmap
-                        val canvas = android.graphics.Canvas(bitmap)
-                        
-                        // Make sure the view is visible and ready
-                        playerView.alpha = 1f
-                        playerView.visibility = View.VISIBLE
-                        
-                        // Wait for the next frame
-                        delay(33) // Approximately one frame duration
-                        
-                        // Draw the view
-                        playerView.draw(canvas)
-
-                        // Validate bitmap
-                        if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
-                            Log.e(TAG, "Invalid bitmap after capture")
-                            return@let
-                        }
-
-                        Log.d(TAG, "Successfully captured frame with size: ${bitmap.width}x${bitmap.height}")
-                        viewModel.detectLanguageInCurrentFrame(bitmap)
-                        bitmap.recycle()
-                        
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error capturing frame: ${e.message}", e)
-                    }
-                } ?: Log.e(TAG, "PlayerView reference is null")
             }
         }
 
@@ -1132,4 +1096,22 @@ fun calculateBounds(point1: LatLng, point2: LatLng): Pair<LatLngBounds, Float> {
     }.coerceIn(2f, 15f)
     
     return bounds to zoom
+}
+
+// Helper function to convert language codes to display names
+private fun getLanguageDisplayName(languageCode: String): String {
+    return when (languageCode) {
+        "ar" -> "Arabic"
+        "zh" -> "Chinese"
+        "fr" -> "French"
+        "de" -> "German"
+        "hi" -> "Hindi"
+        "it" -> "Italian"
+        "ja" -> "Japanese"
+        "ko" -> "Korean"
+        "pt" -> "Portuguese"
+        "ru" -> "Russian"
+        "es" -> "Spanish"
+        else -> languageCode.uppercase()
+    }
 } 

@@ -172,62 +172,43 @@ fun Navigation(
             }
             
             composable(Screen.Compete.route) {
-                val viewModel: MainViewModel = hiltViewModel()
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.padding(32.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.EmojiEvents,
-                            contentDescription = "Trophy Icon",
-                            modifier = Modifier.size(80.dp),
+                            contentDescription = "Trophy",
+                            modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
                         
                         Text(
-                            text = "Language Detection Test",
+                            text = "Compete",
                             style = MaterialTheme.typography.headlineLarge,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         
                         Text(
-                            text = "Test language detection on videos",
+                            text = "Coming Soon",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
                         
                         Text(
-                            text = "Use these buttons to test language detection on individual videos or process your entire video collection.",
+                            text = "Challenge your friends and compete for the highest scores in location guessing!",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = Modifier.padding(horizontal = 32.dp)
                         )
-
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        // Add Language Detection Test Button
-                        Button(
-                            onClick = { viewModel.testLanguageDetection() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Test Language Detection")
-                        }
-
-                        // Button for processing all videos
-                        Button(
-                            onClick = { viewModel.processAllVideosForLanguage() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Process All Videos")
-                        }
                     }
                 }
             }
