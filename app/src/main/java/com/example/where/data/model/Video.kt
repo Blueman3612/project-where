@@ -27,7 +27,8 @@ data class Video(
     // Recommendation scores
     var relevanceScore: Float = 0f,
     var freshness: Float = 0f,
-    var diversityPenalty: Float = 0f
+    var diversityPenalty: Float = 0f,
+    var componentScores: Map<String, Float> = emptyMap()
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,

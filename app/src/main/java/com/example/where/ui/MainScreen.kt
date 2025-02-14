@@ -90,6 +90,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentSize
 import com.example.where.util.LanguageDetector.LanguageResult
 import androidx.compose.foundation.BorderStroke
+import com.example.where.data.repository.VideoRepository
 
 private const val TAG = "MainScreen"
 
@@ -686,40 +687,39 @@ fun MainScreen(
                                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                                 )
                                                 Text(
-                                                    text = "• Relevance: ${(video.relevanceScore * 100).toInt()}%",
+                                                    text = "• Relevance (${(VideoRepository.RecommendationWeights.RELEVANCE * 100).toInt()}%): ${(video.relevanceScore * VideoRepository.RecommendationWeights.RELEVANCE * 100).toInt()}%",
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                                                 )
+                                                // Add relevance score component breakdown
+                                                Column(
+                                                    modifier = Modifier.padding(start = 16.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Location (${(VideoRepository.RecommendationWeights.LOCATION * 100).toInt()}%): ${((video.componentScores["location"] ?: 0f) * 100).toInt()}%",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                                                    )
+                                                    Text(
+                                                        text = "Language (${(VideoRepository.RecommendationWeights.LANGUAGE * 100).toInt()}%): ${((video.componentScores["language"] ?: 0f) * 100).toInt()}%",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                                                    )
+                                                    Text(
+                                                        text = "Category (${(VideoRepository.RecommendationWeights.CATEGORY * 100).toInt()}%): ${((video.componentScores["category"] ?: 0f) * 100).toInt()}%",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                                                    )
+                                                }
                                                 Text(
-                                                    text = "• Freshness: ${(video.freshness * 100).toInt()}%",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                                )
-                                                Text(
-                                                    text = "• Diversity Penalty: ${(video.diversityPenalty * 100).toInt()}%",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                                )
-                                                
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = "Final Score Calculation:",
-                                                    style = MaterialTheme.typography.labelLarge,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                                )
-                                                Text(
-                                                    text = "• Relevance (30%): ${(video.relevanceScore * 0.3f * 100).toInt()}%",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                                )
-                                                Text(
-                                                    text = "• Freshness (20%): ${(video.freshness * 0.2f * 100).toInt()}%",
+                                                    text = "• Freshness (${(VideoRepository.RecommendationWeights.FRESHNESS * 100).toInt()}%): ${(video.freshness * VideoRepository.RecommendationWeights.FRESHNESS * 100).toInt()}%",
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                                                 )
                                                 val popularity = (video.likes + video.comments) / 100f
                                                 Text(
-                                                    text = "• Popularity (15%): ${(popularity * 0.15f * 100).toInt()}%",
+                                                    text = "• Popularity (${(VideoRepository.RecommendationWeights.POPULARITY * 100).toInt()}%): ${(popularity * VideoRepository.RecommendationWeights.POPULARITY * 100).toInt()}%",
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                                                 )
@@ -727,22 +727,22 @@ fun MainScreen(
                                                     1f - kotlin.math.abs(diff - 0.5f)
                                                 } ?: 0.5f
                                                 Text(
-                                                    text = "• Difficulty Match (15%): ${(difficultyMatch * 0.15f * 100).toInt()}%",
+                                                    text = "• Difficulty Match (${(VideoRepository.RecommendationWeights.DIFFICULTY * 100).toInt()}%): ${(difficultyMatch * VideoRepository.RecommendationWeights.DIFFICULTY * 100).toInt()}%",
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                                                 )
                                                 Text(
-                                                    text = "• Diversity Impact (20%): -${(video.diversityPenalty * 0.2f * 100).toInt()}%",
+                                                    text = "• Diversity Impact (${(VideoRepository.RecommendationWeights.DIVERSITY * 100).toInt()}%): -${(video.diversityPenalty * VideoRepository.RecommendationWeights.DIVERSITY * 100).toInt()}%",
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                                                 )
                                                 
                                                 val finalScore = (
-                                                    video.relevanceScore * 0.3f +
-                                                    video.freshness * 0.2f +
-                                                    popularity * 0.15f +
-                                                    difficultyMatch * 0.15f
-                                                ) * (1f - video.diversityPenalty * 0.2f)
+                                                    video.relevanceScore * VideoRepository.RecommendationWeights.RELEVANCE +
+                                                    video.freshness * VideoRepository.RecommendationWeights.FRESHNESS +
+                                                    popularity * VideoRepository.RecommendationWeights.POPULARITY +
+                                                    difficultyMatch * VideoRepository.RecommendationWeights.DIFFICULTY
+                                                ) * (1f - video.diversityPenalty * VideoRepository.RecommendationWeights.DIVERSITY)
                                                 
                                                 Text(
                                                     text = "Final Recommendation Score: ${(finalScore * 100).toInt()}%",
