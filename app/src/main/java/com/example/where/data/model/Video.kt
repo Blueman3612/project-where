@@ -21,7 +21,9 @@ data class Video(
     val comments: Int = 0,
     val primaryLanguage: String? = null,
     val languageConfidence: Float? = null,
-    val languageUpdatedAt: Long? = null
+    val languageUpdatedAt: Long? = null,
+    val categories: Set<String>? = null,
+    val difficulty: Float? = null
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,
@@ -41,7 +43,9 @@ data class Video(
         "comments" to comments,
         "primaryLanguage" to primaryLanguage,
         "languageConfidence" to languageConfidence,
-        "languageUpdatedAt" to languageUpdatedAt
+        "languageUpdatedAt" to languageUpdatedAt,
+        "categories" to categories,
+        "difficulty" to difficulty
     ).filterValues { it != null }
 
     companion object {
@@ -84,6 +88,10 @@ data class Video(
                 
                 // Use authorId as fallback for authorUsername
                 val authorUsername = map["authorUsername"] as? String ?: authorId
+
+                // Extract categories
+                @Suppress("UNCHECKED_CAST")
+                val categories = (map["categories"] as? List<String>)?.toSet()
                 
                 return Video(
                     id = id,
@@ -105,7 +113,9 @@ data class Video(
                     comments = (map["comments"] as? Number)?.toInt() ?: 0,
                     primaryLanguage = map["primaryLanguage"] as? String,
                     languageConfidence = (map["languageConfidence"] as? Number)?.toFloat(),
-                    languageUpdatedAt = (map["languageUpdatedAt"] as? Number)?.toLong()
+                    languageUpdatedAt = (map["languageUpdatedAt"] as? Number)?.toLong(),
+                    categories = categories,
+                    difficulty = (map["difficulty"] as? Number)?.toFloat()
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Error parsing video data: ${e.message}")

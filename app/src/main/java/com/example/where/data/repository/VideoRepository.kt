@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import com.example.where.data.model.Video
 import com.example.where.data.model.VideoSource
+import com.example.where.data.model.UserPreferences
 import com.example.where.util.VideoCompressor
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.firestore.AggregateSource
@@ -25,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import com.google.firebase.auth.FirebaseAuth
 import java.util.UUID
 import com.google.firebase.firestore.FieldValue
+import kotlin.math.*
 
 private const val TAG = "VideoRepository"
 
@@ -37,6 +39,19 @@ class VideoRepository @Inject constructor(
     private val videosCollection = firestore.collection("videos")
     private val userLikesCollection = firestore.collection("userLikes")
     
+    companion object {
+        private const val VIDEOS_COLLECTION = "videos"
+        private const val ENGAGEMENTS_COLLECTION = "engagements"
+        private const val USER_PREFERENCES_COLLECTION = "user_preferences"
+        
+        // Weights for different factors in recommendation score
+        private const val WEIGHT_RELEVANCE = 0.3f
+        private const val WEIGHT_FRESHNESS = 0.2f
+        private const val WEIGHT_POPULARITY = 0.15f
+        private const val WEIGHT_DIFFICULTY = 0.15f
+        private const val WEIGHT_DIVERSITY = 0.2f
+    }
+
     fun getVideosFlow(): Flow<List<Video>> = flow {
         try {
             val snapshot = videosCollection.get().await()
@@ -773,6 +788,255 @@ class VideoRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error updating video language: ${e.message}", e)
             throw e
+        }
+    }
+
+    suspend fun getRecommendedVideo(userId: String): Video? {
+        try {
+            // Get user preferences
+            val preferences = getUserPreferences(userId)
+            
+            // Get a batch of candidates (more efficient than scoring entire collection)
+            val candidates = firestore.collection(VIDEOS_COLLECTION)
+                .orderBy("likes", Query.Direction.DESCENDING)  // Use likes as a proxy for popularity
+                .limit(50)
+                .get()
+                .await()
+                .documents
+                .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+
+            if (candidates.isEmpty()) {
+                return getRandomVideo()
+            }
+
+            // Score each candidate
+            val scoredVideos = candidates.map { video ->
+                video to calculateRecommendationScore(video, preferences)
+            }
+
+            // Apply diversity boost to ensure variety
+            val diversifiedScores = applyDiversityBoost(scoredVideos, userId)
+
+            // Return the highest scoring video
+            return diversifiedScores.maxByOrNull { it.second }?.first
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting recommended video: ${e.message}")
+            return getRandomVideo()
+        }
+    }
+
+    private suspend fun getUserPreferences(userId: String): UserPreferences {
+        return try {
+            val doc = firestore.collection(USER_PREFERENCES_COLLECTION)
+                .document(userId)
+                .get()
+                .await()
+            
+            if (doc.exists()) {
+                val data = doc.data
+                if (data != null) {
+                    UserPreferences(
+                        userId = userId,
+                        preferredRegions = (data["preferredRegions"] as? Map<String, Double>)?.mapValues { it.value.toFloat() } ?: emptyMap(),
+                        preferredLanguages = (data["preferredLanguages"] as? Map<String, Double>)?.mapValues { it.value.toFloat() } ?: emptyMap(),
+                        preferredCategories = (data["preferredCategories"] as? Map<String, Double>)?.mapValues { it.value.toFloat() } ?: emptyMap(),
+                        skillLevel = (data["skillLevel"] as? Number)?.toFloat() ?: 0.5f,
+                        activeHours = (data["activeHours"] as? List<Int>) ?: List(24) { 1 },
+                        lastUpdated = (data["lastUpdated"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                    )
+                } else {
+                    createDefaultPreferences(userId)
+                }
+            } else {
+                createDefaultPreferences(userId)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting user preferences: ${e.message}")
+            createDefaultPreferences(userId)
+        }
+    }
+
+    private fun createDefaultPreferences(userId: String) = UserPreferences(
+        userId = userId,
+        preferredRegions = emptyMap(),
+        preferredLanguages = emptyMap(),
+        preferredCategories = emptyMap(),
+        skillLevel = 0.5f,
+        activeHours = List(24) { 1 },
+        lastUpdated = System.currentTimeMillis()
+    )
+
+    private fun calculateRecommendationScore(video: Video, preferences: UserPreferences): Float {
+        // Relevance score based on user preferences
+        val relevanceScore = calculateRelevanceScore(video, preferences)
+        
+        // Freshness decay
+        val freshness = calculateFreshnessScore(video.createdAt)
+        
+        // Popularity signal
+        val popularity = (video.likes + video.comments) / 100f
+            .coerceIn(0f, 1f)
+        
+        // Difficulty matching (prefer videos slightly above user's skill level)
+        val difficultyMatch = calculateDifficultyMatch(video, preferences.skillLevel)
+
+        return (relevanceScore * WEIGHT_RELEVANCE +
+                freshness * WEIGHT_FRESHNESS +
+                popularity * WEIGHT_POPULARITY +
+                difficultyMatch * WEIGHT_DIFFICULTY)
+            .coerceIn(0f, 1f)
+    }
+
+    private fun calculateRelevanceScore(video: Video, preferences: UserPreferences): Float {
+        var score = 0f
+        var weights = 0f
+
+        // Language preference
+        preferences.preferredLanguages[video.primaryLanguage]?.let { weight ->
+            score += weight
+            weights += 1f
+        }
+
+        // Region preference (based on location)
+        val region = getRegionFromLocation(video.location)
+        preferences.preferredRegions[region]?.let { weight ->
+            score += weight
+            weights += 1f
+        }
+
+        // Category preference
+        video.categories?.forEach { category ->
+            preferences.preferredCategories[category]?.let { weight ->
+                score += weight
+                weights += 1f
+            }
+        }
+
+        return if (weights > 0f) score / weights else 0.5f
+    }
+
+    private fun calculateFreshnessScore(timestamp: Long): Float {
+        // Use integer division for days calculation
+        val ageInDays = ((System.currentTimeMillis() - timestamp) / (24L * 60L * 60L * 1000L)).toInt()
+        
+        // Use a simple table-based approach with explicit Float values
+        return when {
+            ageInDays <= 0 -> 1.0f
+            ageInDays >= 30 -> 0.0f
+            else -> {
+                val remainingDays = 30 - ageInDays
+                (remainingDays * (1.0f / 30.0f))
+            }
+        }
+    }
+
+    private fun calculateDifficultyMatch(video: Video, userSkill: Float): Float {
+        val videoDifficulty = video.difficulty ?: 0.5f
+        // Prefer videos slightly above user's skill level
+        val targetDifficulty = (userSkill + 0.1f).coerceIn(0f, 1f)
+        return 1f - abs(videoDifficulty - targetDifficulty)
+    }
+
+    private suspend fun applyDiversityBoost(
+        scoredVideos: List<Pair<Video, Float>>,
+        userId: String
+    ): List<Pair<Video, Float>> {
+        // Get recently shown videos
+        val recentVideos = getRecentlyShownVideos(userId)
+        
+        return scoredVideos.map { (video, score) ->
+            // Apply penalty if similar to recently shown videos
+            val diversityPenalty = calculateDiversityPenalty(video, recentVideos)
+            video to (score * (1f - WEIGHT_DIVERSITY * diversityPenalty))
+        }
+    }
+
+    private suspend fun getRecentlyShownVideos(userId: String): List<Video> {
+        return try {
+            firestore.collection(ENGAGEMENTS_COLLECTION)
+                .whereEqualTo("userId", userId)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(20)
+                .get()
+                .await()
+                .documents
+                .mapNotNull { it.getString("videoId") }
+                .mapNotNull { getVideo(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting recent videos: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun calculateDiversityPenalty(video: Video, recentVideos: List<Video>): Float {
+        if (recentVideos.isEmpty()) return 0f
+
+        return recentVideos.map { recentVideo ->
+            var similarity = 0f
+            var factors = 0f
+
+            // Language similarity
+            if (video.primaryLanguage == recentVideo.primaryLanguage) {
+                similarity += 1f
+                factors += 1f
+            }
+
+            // Location proximity
+            val distance = calculateDistance(video.location, recentVideo.location)
+            if (distance < 100_000) { // Within 100km
+                similarity += 1f - (distance.toFloat() / 100_000f)
+                factors += 1f
+            }
+
+            // Category overlap
+            val categoryOverlap = video.categories?.intersect(recentVideo.categories ?: emptySet())?.size ?: 0
+            val totalCategories = video.categories?.size ?: 0
+            if (totalCategories > 0) {
+                similarity += categoryOverlap.toFloat() / totalCategories
+                factors += 1f
+            }
+
+            if (factors > 0f) similarity / factors else 0f
+        }.average().toFloat()
+    }
+
+    private fun calculateDistance(point1: LatLng, point2: LatLng): Double {
+        val earthRadius = 6371000.0 // meters
+        
+        val lat1 = Math.toRadians(point1.latitude)
+        val lon1 = Math.toRadians(point1.longitude)
+        val lat2 = Math.toRadians(point2.latitude)
+        val lon2 = Math.toRadians(point2.longitude)
+        
+        val dLat = lat2 - lat1
+        val dLon = lon2 - lon1
+        
+        val a = sin(dLat / 2).pow(2) + 
+                cos(lat1) * cos(lat2) * 
+                sin(dLon / 2).pow(2)
+        
+        val c = 2 * asin(sqrt(a))
+        
+        return earthRadius * c
+    }
+
+    private fun getRegionFromLocation(location: LatLng): String {
+        // Simplified region calculation - could be replaced with proper reverse geocoding
+        return when {
+            location.latitude > 0 -> {
+                when {
+                    location.longitude < -30 -> "North America"
+                    location.longitude < 60 -> "Europe"
+                    else -> "Asia"
+                }
+            }
+            else -> {
+                when {
+                    location.longitude < -30 -> "South America"
+                    location.longitude < 60 -> "Africa"
+                    else -> "Oceania"
+                }
+            }
         }
     }
 } 
