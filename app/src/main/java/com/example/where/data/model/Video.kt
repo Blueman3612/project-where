@@ -23,7 +23,11 @@ data class Video(
     val languageConfidence: Float? = null,
     val languageUpdatedAt: Long? = null,
     val categories: Set<String>? = null,
-    val difficulty: Float? = null
+    val difficulty: Float? = null,
+    // Recommendation scores
+    var relevanceScore: Float = 0f,
+    var freshness: Float = 0f,
+    var diversityPenalty: Float = 0f
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "id" to id,

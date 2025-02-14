@@ -869,9 +869,11 @@ class VideoRepository @Inject constructor(
     private fun calculateRecommendationScore(video: Video, preferences: UserPreferences): Float {
         // Relevance score based on user preferences
         val relevanceScore = calculateRelevanceScore(video, preferences)
+        video.relevanceScore = relevanceScore
         
         // Freshness decay
         val freshness = calculateFreshnessScore(video.createdAt)
+        video.freshness = freshness
         
         // Popularity signal
         val popularity = (video.likes + video.comments) / 100f
@@ -947,6 +949,7 @@ class VideoRepository @Inject constructor(
         return scoredVideos.map { (video, score) ->
             // Apply penalty if similar to recently shown videos
             val diversityPenalty = calculateDiversityPenalty(video, recentVideos)
+            video.diversityPenalty = diversityPenalty
             video to (score * (1f - WEIGHT_DIVERSITY * diversityPenalty))
         }
     }

@@ -101,6 +101,9 @@ class MainViewModel @Inject constructor(
     private val _languageHintRevealed = MutableStateFlow(false)
     val languageHintRevealed: StateFlow<Boolean> = _languageHintRevealed.asStateFlow()
 
+    private val _debugInfoRevealed = MutableStateFlow(false)
+    val debugInfoRevealed: StateFlow<Boolean> = _debugInfoRevealed.asStateFlow()
+
     init {
         viewModelScope.launch {
             loadNextVideo()
@@ -157,6 +160,10 @@ class MainViewModel @Inject constructor(
 
     fun resetLanguageHint() {
         _languageHintRevealed.value = false
+    }
+
+    fun toggleDebugInfo() {
+        _debugInfoRevealed.value = !_debugInfoRevealed.value
     }
 
     fun submitGuess(guessLocation: LatLng) {

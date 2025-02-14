@@ -621,6 +621,172 @@ fun MainScreen(
                                     }
                                 }
                             }
+
+                            // Debug Info Button
+                            currentVideo?.let { video ->
+                                val debugInfoRevealed by viewModel.debugInfoRevealed.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+                                val expandedWidth by animateFloatAsState(
+                                    targetValue = if (debugInfoRevealed) 350f else 40f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioLowBouncy,
+                                        stiffness = Spring.StiffnessLow
+                                    ),
+                                    label = "Debug Width Animation"
+                                )
+                                
+                                Surface(
+                                    onClick = { viewModel.toggleDebugInfo() },
+                                    modifier = Modifier
+                                        .width(expandedWidth.dp)
+                                        .wrapContentHeight()
+                                        .clip(if (debugInfoRevealed) RoundedCornerShape(20.dp) else CircleShape)
+                                        .background(
+                                            color = if (!debugInfoRevealed) {
+                                                MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f)
+                                            } else {
+                                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f)
+                                            }
+                                        ),
+                                    color = Color.Transparent,
+                                    shape = if (debugInfoRevealed) RoundedCornerShape(20.dp) else CircleShape
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(if (debugInfoRevealed) 16.dp else 8.dp),
+                                        verticalAlignment = if (debugInfoRevealed) 
+                                            Alignment.Top else Alignment.CenterVertically,
+                                        horizontalArrangement = if (debugInfoRevealed) 
+                                            Arrangement.Start else Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.BugReport,
+                                            contentDescription = "Debug Info",
+                                            tint = if (!debugInfoRevealed) 
+                                                MaterialTheme.colorScheme.onSecondary
+                                            else 
+                                                MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                        
+                                        if (debugInfoRevealed) {
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Recommendation Scores:",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                                )
+                                                Text(
+                                                    text = "• Relevance: ${(video.relevanceScore * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                Text(
+                                                    text = "• Freshness: ${(video.freshness * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                Text(
+                                                    text = "• Diversity Penalty: ${(video.diversityPenalty * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "Final Score Calculation:",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                                )
+                                                Text(
+                                                    text = "• Relevance (30%): ${(video.relevanceScore * 0.3f * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                Text(
+                                                    text = "• Freshness (20%): ${(video.freshness * 0.2f * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                val popularity = (video.likes + video.comments) / 100f
+                                                Text(
+                                                    text = "• Popularity (15%): ${(popularity * 0.15f * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                val difficultyMatch = video.difficulty?.let { diff ->
+                                                    1f - kotlin.math.abs(diff - 0.5f)
+                                                } ?: 0.5f
+                                                Text(
+                                                    text = "• Difficulty Match (15%): ${(difficultyMatch * 0.15f * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                Text(
+                                                    text = "• Diversity Impact (20%): -${(video.diversityPenalty * 0.2f * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                
+                                                val finalScore = (
+                                                    video.relevanceScore * 0.3f +
+                                                    video.freshness * 0.2f +
+                                                    popularity * 0.15f +
+                                                    difficultyMatch * 0.15f
+                                                ) * (1f - video.diversityPenalty * 0.2f)
+                                                
+                                                Text(
+                                                    text = "Final Recommendation Score: ${(finalScore * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                )
+
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "Video Metadata:",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                                )
+                                                Text(
+                                                    text = "• Age: ${((System.currentTimeMillis() - video.createdAt) / (24 * 60 * 60 * 1000))} days",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                Text(
+                                                    text = "• Engagement: ${video.likes} likes, ${video.comments} comments",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                )
+                                                video.primaryLanguage?.let { lang ->
+                                                    Text(
+                                                        text = "• Language: ${getLanguageDisplayName(lang)} (${(video.languageConfidence ?: 0f * 100).toInt()}%)",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                video.categories?.let { cats ->
+                                                    Text(
+                                                        text = "• Categories: ${cats.joinToString(", ")}",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                video.difficulty?.let { diff ->
+                                                    Text(
+                                                        text = "• Difficulty: ${(diff * 100).toInt()}%",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Right side: Likes and Comments
