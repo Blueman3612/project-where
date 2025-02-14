@@ -98,6 +98,9 @@ class MainViewModel @Inject constructor(
     private val _processingStatus = MutableStateFlow<String?>(null)
     val processingStatus: StateFlow<String?> = _processingStatus.asStateFlow()
 
+    private val _languageHintRevealed = MutableStateFlow(false)
+    val languageHintRevealed: StateFlow<Boolean> = _languageHintRevealed.asStateFlow()
+
     init {
         viewModelScope.launch {
             loadNextVideo()
@@ -129,6 +132,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun switchToNextVideo() {
+        resetLanguageHint()
         viewModelScope.launch {
             _detectedLanguage.value = null
             val nextVideo = _nextVideo.value
@@ -147,21 +151,30 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun revealLanguageHint() {
+        _languageHintRevealed.value = true
+    }
+
+    fun resetLanguageHint() {
+        _languageHintRevealed.value = false
+    }
+
     fun submitGuess(guessLocation: LatLng) {
         _currentVideo.value?.let { video ->
             val distanceMeters = calculateDistance(guessLocation, video.location)
             val distanceMiles = distanceMeters * 0.000621371 // Convert meters to miles
             _lastGuessDistance.value = distanceMiles
             
-            // Log the locations and distance for debugging
-            Log.d("MainViewModel", "Guess location: ${guessLocation.latitude}, ${guessLocation.longitude}")
-            Log.d("MainViewModel", "Actual location: ${video.location.latitude}, ${video.location.longitude}")
-            Log.d("MainViewModel", "Distance: $distanceMiles miles")
+            // Calculate score based on distance and apply language hint penalty if used
+            val baseScore = calculateScore(distanceMiles)
+            val finalScore = if (_languageHintRevealed.value) {
+                maxOf(baseScore - 1000, 0) // Apply 1000 point penalty but don't go below 0
+            } else {
+                baseScore
+            }
             
-            // Calculate score based on distance
-            val score = calculateScore(distanceMiles)
-            _lastGuessScore.value = score
-            _currentScore.value += score
+            _lastGuessScore.value = finalScore
+            _currentScore.value += finalScore
             
             _error.value = null
         } ?: run {

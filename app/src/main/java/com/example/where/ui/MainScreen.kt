@@ -503,46 +503,124 @@ fun MainScreen(
                         verticalAlignment = Alignment.Top
                     ) {
                         // Left side: Profile and Username
-                        Row(
-                            modifier = Modifier
-                                .clickable { 
-                                    currentVideo?.let { video ->
-                                        onNavigateToProfile(video.authorId)
-                                    }
-                                },
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Start
+                        Column(
+                            horizontalAlignment = Alignment.Start,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Profile Picture
-                            Box(
+                            // Profile and Username Row
+                            Row(
                                 modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.5f))
+                                    .clickable { 
+                                        currentVideo?.let { video ->
+                                            onNavigateToProfile(video.authorId)
+                                        }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Start
                             ) {
-                                Icon(
-                                    Icons.Default.Person,
-                                    "Profile",
-                                    tint = Color.White,
+                                // Profile Picture
+                                Box(
                                     modifier = Modifier
-                                        .size(24.dp)
-                                        .align(Alignment.Center)
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                ) {
+                                    Icon(
+                                        Icons.Default.Person,
+                                        "Profile",
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .align(Alignment.Center)
+                                    )
+                                }
+
+                                // Username
+                                Text(
+                                    text = currentVideo?.authorUsername ?: "Unknown",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    modifier = Modifier
+                                        .padding(start = 8.dp)
+                                        .background(
+                                            color = Color.Black.copy(alpha = 0.5f),
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .padding(vertical = 4.dp, horizontal = 8.dp)
                                 )
                             }
 
-                            // Username
-                            Text(
-                                text = currentVideo?.authorUsername ?: "Unknown",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
-                                modifier = Modifier
-                                    .padding(start = 8.dp)
-                                    .background(
-                                        color = Color.Black.copy(alpha = 0.5f),
-                                        shape = MaterialTheme.shapes.medium
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Language Hint Button
+                            currentVideo?.let { video ->
+                                video.primaryLanguage?.let { language ->
+                                    val languageHintRevealed by viewModel.languageHintRevealed.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+                                    val expandedWidth by animateFloatAsState(
+                                        targetValue = if (languageHintRevealed) 200f else 40f,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioLowBouncy,
+                                            stiffness = Spring.StiffnessLow
+                                        ),
+                                        label = "Width Animation"
                                     )
-                                    .padding(vertical = 4.dp, horizontal = 8.dp)
-                            )
+                                    
+                                    Surface(
+                                        onClick = { if (!languageHintRevealed) viewModel.revealLanguageHint() },
+                                        enabled = !languageHintRevealed,
+                                        modifier = Modifier
+                                            .width(expandedWidth.dp)
+                                            .height(40.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                color = if (!languageHintRevealed) {
+                                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                                                } else {
+                                                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.9f)
+                                                }
+                                            ),
+                                        color = Color.Transparent,
+                                        shape = CircleShape
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = if (languageHintRevealed) 
+                                                Arrangement.Start else Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Translate,
+                                                contentDescription = "Language Hint",
+                                                tint = if (!languageHintRevealed) 
+                                                    MaterialTheme.colorScheme.onTertiary
+                                                else 
+                                                    MaterialTheme.colorScheme.onTertiaryContainer,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            
+                                            if (languageHintRevealed) {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column {
+                                                    Text(
+                                                        text = getLanguageDisplayName(language),
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                                    )
+                                                    video.languageConfidence?.let { confidence ->
+                                                        Text(
+                                                            text = "Confidence: ${(confidence * 100).toInt()}%",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Right side: Likes and Comments
@@ -694,10 +772,7 @@ fun MainScreen(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = scoreOverlayAlpha * 0.7f))
                     .clickable { showScoreOverlay = false }
-                    .zIndex(100f)
-                    .graphicsLayer { 
-                        // Remove zIndex from here
-                    },
+                    .zIndex(100f),
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
@@ -710,48 +785,60 @@ fun MainScreen(
                         },
                     shape = RoundedCornerShape(28.dp),
                     color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 16.dp // Increased elevation for more depth
+                    tonalElevation = 8.dp
                 ) {
                     Column(
                         modifier = Modifier
-                            .padding(32.dp)
+                            .padding(24.dp)
                             .width(IntrinsicSize.Min),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(24.dp) // Increased spacing
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Score Badge - Made larger and more prominent
-                        Box(
-                            modifier = Modifier
-                                .size(120.dp) // Increased size
-                                .background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
+                        // Score Section
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "SCORE",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                )
-                                Text(
-                                    text = "${lastGuessScore}",
-                                    style = MaterialTheme.typography.displayMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
+                            Text(
+                                text = "${lastGuessScore}",
+                                style = MaterialTheme.typography.displayLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            
+                            // Show hint penalty if used
+                            val hintRevealed by viewModel.languageHintRevealed.collectAsStateWithLifecycle(lifecycleOwner = lifecycleOwner)
+                            if (hintRevealed) {
+                                Row(
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Translate,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "-1000",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                    )
+                                }
                             }
                         }
+
+                        Divider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                        )
 
                         // Distance with icon
                         lastGuessDistance?.let { distance ->
                             Row(
                                 horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 8.dp)
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Place,
@@ -768,8 +855,8 @@ fun MainScreen(
                             }
                         }
 
-                        // Next Video Icon Button
-                        IconButton(
+                        // Next Video Button
+                        FilledTonalButton(
                             onClick = { 
                                 showScoreOverlay = false
                                 showMap = false
@@ -777,50 +864,9 @@ fun MainScreen(
                                 selectedLocation = null
                                 hasGuessedCurrentVideo = false
                             },
-                            modifier = Modifier
-                                .size(56.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.primary,
-                                    CircleShape
-                                )
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowForward,
-                                contentDescription = "Next Video",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-
-                        // Add Language Hint Button in the top-right corner
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.TopEnd
-                        ) {
-                            currentVideo?.primaryLanguage?.let { language ->
-                                IconButton(
-                                    onClick = {
-                                        // Language detection happens automatically via frame capture
-                                    },
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .background(
-                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                                            CircleShape
-                                        )
-                                        .clip(CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Translate,
-                                        contentDescription = "Language Hint",
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                    )
-                                }
-                            }
+                            Text("NEXT VIDEO")
                         }
                     }
                 }
@@ -1024,44 +1070,6 @@ fun MainScreen(
             }
         }
 
-        // Remove the LaunchedEffect for frame capture
-        // Add this inside the Box containing the video player, after the overlay controls
-        currentVideo?.primaryLanguage?.let { language ->
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 80.dp)
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Translate,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = getLanguageDisplayName(language),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-            }
-        }
-
         // Video player loading state
         if (isLoading) {
             Box(
@@ -1100,18 +1108,26 @@ fun calculateBounds(point1: LatLng, point2: LatLng): Pair<LatLngBounds, Float> {
 
 // Helper function to convert language codes to display names
 private fun getLanguageDisplayName(languageCode: String): String {
-    return when (languageCode) {
+    return when (languageCode.lowercase()) {
         "ar" -> "Arabic"
         "zh" -> "Chinese"
+        "en" -> "English"
         "fr" -> "French"
         "de" -> "German"
         "hi" -> "Hindi"
+        "id" -> "Indonesian"
         "it" -> "Italian"
         "ja" -> "Japanese"
         "ko" -> "Korean"
+        "ms" -> "Malay"
+        "fa" -> "Persian"
         "pt" -> "Portuguese"
         "ru" -> "Russian"
         "es" -> "Spanish"
+        "th" -> "Thai"
+        "tr" -> "Turkish"
+        "ur" -> "Urdu"
+        "vi" -> "Vietnamese"
         else -> languageCode.uppercase()
     }
 } 
