@@ -358,10 +358,16 @@ fun MainScreen(
     // Update next video handling
     LaunchedEffect(nextVideo) {
         nextVideo?.let { video ->
+            // Preload the next video in the preload player
             preloadPlayer.apply {
+                stop()
+                clearMediaItems()
                 setMediaItem(MediaItem.fromUri(video.url))
                 prepare()
+                // Don't start playing, just prepare the media
                 playWhenReady = false
+                // Preload a small buffer
+                seekTo(0)
             }
         }
     }

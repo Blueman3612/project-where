@@ -104,54 +104,80 @@ class MainViewModel @Inject constructor(
     private val _debugInfoRevealed = MutableStateFlow(false)
     val debugInfoRevealed: StateFlow<Boolean> = _debugInfoRevealed.asStateFlow()
 
+    // Add this after the currentVideo declaration
+    private var hasRecordedCurrentView = false
+
     init {
         viewModelScope.launch {
-            loadNextVideo()
-        }
-    }
-
-    private suspend fun loadNextVideo() {
-        try {
-            _isLoading.value = true
-            val video = videoRepository.getRandomVideo()
-            if (_currentVideo.value == null) {
-                _currentVideo.value = video
-                _currentVideoUrl.value = video
-            } else {
-                _nextVideo.value = video
-            }
-            // Check if current user has liked this video and set initial like count
-            video?.let { 
-                auth.currentUser?.uid?.let { userId ->
-                    _isLiked.value = videoRepository.isVideoLiked(it.id, userId)
+            // Start preloading immediately
+            val userId = auth.currentUser?.uid
+            if (userId != null) {
+                _isLoading.value = true
+                try {
+                    loadNextVideo(true) // Load first video with preload
+                } finally {
+                    _isLoading.value = false
                 }
-                _currentLikeCount.value = it.likes
             }
-        } catch (e: Exception) {
-            Log.e("MainViewModel", "Error loading video: ${e.message}")
-        } finally {
-            _isLoading.value = false
         }
     }
 
-    fun switchToNextVideo() {
-        resetLanguageHint()
+    // Update loadNextVideo to handle preloading
+    private fun loadNextVideo(isInitialLoad: Boolean = false) {
         viewModelScope.launch {
-            _detectedLanguage.value = null
-            val nextVideo = _nextVideo.value
-            _currentVideo.value = nextVideo
-            _currentVideoUrl.value = nextVideo
-            _nextVideo.value = null
-            loadNextVideo()
-            
-            // Reset like state and count for new video
-            nextVideo?.let { video ->
-                auth.currentUser?.uid?.let { userId ->
-                    _isLiked.value = videoRepository.isVideoLiked(video.id, userId)
+            try {
+                _isLoading.value = !isInitialLoad // Don't show loading on initial load since we already are
+                val userId = auth.currentUser?.uid
+                if (userId == null) {
+                    _error.value = "Please sign in to continue"
+                    return@launch
                 }
-                _currentLikeCount.value = video.likes
+
+                // If we have a preloaded video, use it
+                if (!isInitialLoad && _nextVideo.value != null) {
+                    _currentVideo.value = _nextVideo.value
+                    _currentLikeCount.value = _nextVideo.value?.likes ?: 0
+                    _isLiked.value = _nextVideo.value?.let { videoRepository.isVideoLiked(it.id, userId) } ?: false
+                    
+                    // Record the view
+                    if (!hasRecordedCurrentView) {
+                        _currentVideo.value?.let { video ->
+                            videoRepository.recordVideoView(video.id, userId)
+                            hasRecordedCurrentView = true
+                        }
+                    }
+                } else {
+                    // Get a new video if no preloaded one available
+                    val video = videoRepository.getNextVideo(userId)
+                    if (video != null) {
+                        _currentVideo.value = video
+                        _currentLikeCount.value = video.likes
+                        _isLiked.value = videoRepository.isVideoLiked(video.id, userId)
+                        
+                        // Record the view
+                        if (!hasRecordedCurrentView) {
+                            videoRepository.recordVideoView(video.id, userId)
+                            hasRecordedCurrentView = true
+                        }
+                    } else {
+                        _error.value = "No more videos available"
+                    }
+                }
+
+                // Always start preloading the next video after setting current
+                videoRepository.preloadNextRecommendation(userId)
+            } catch (e: Exception) {
+                _error.value = "Error loading video: ${e.message}"
+            } finally {
+                _isLoading.value = false
             }
         }
+    }
+
+    // Update switchToNextVideo to handle preloading
+    fun switchToNextVideo() {
+        hasRecordedCurrentView = false
+        loadNextVideo()
     }
 
     fun revealLanguageHint() {
