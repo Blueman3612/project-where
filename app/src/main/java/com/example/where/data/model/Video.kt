@@ -11,6 +11,7 @@ data class Video(
     val url: String,
     val thumbnailUrl: String?,
     val location: LatLng,
+    val region: String? = null,
     val title: String?,
     val description: String?,
     val authorId: String,
@@ -38,6 +39,7 @@ data class Video(
             "latitude" to location.latitude,
             "longitude" to location.longitude
         ),
+        "region" to region,
         "title" to title,
         "description" to description,
         "authorId" to authorId,
@@ -103,6 +105,7 @@ data class Video(
                     url = url,
                     thumbnailUrl = map["thumbnailUrl"] as? String,
                     location = location,
+                    region = map["region"] as? String,
                     title = map["title"] as? String,
                     description = map["description"] as? String,
                     authorId = authorId,

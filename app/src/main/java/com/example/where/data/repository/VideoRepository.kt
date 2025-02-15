@@ -52,18 +52,18 @@ class VideoRepository @Inject constructor(
         private const val USER_PREFERENCES_COLLECTION = "user_preferences"
         
         // Cache settings
-        private const val RECOMMENDATION_CACHE_DURATION = 300000L
-        private const val PRELOAD_THRESHOLD = 60000L
+        private const val QUEUE_SIZE = 5 // Number of videos to keep in queue
+        private const val MIN_QUEUE_SIZE = 2 // Trigger new processing when queue size is below this
     }
 
     // Centralized weights for recommendation system
     object RecommendationWeights {
         // Main component weights (must sum to 1.0)
         const val RELEVANCE = 0.75f      // Personalized relevance (location, language, categories)
-        const val FRESHNESS = 0.1f      // How recent the video is
-        const val POPULARITY = 0.01f     // Likes and comments
-        const val DIFFICULTY = 0.04f     // Match with user's skill level
-        const val DIVERSITY = 0.1f       // Penalty for similar videos
+        const val FRESHNESS = 0.1f       // How recent the video is
+        const val POPULARITY = 0.01f      // Likes and comments
+        const val DIFFICULTY = 0.04f      // Match with user's skill level
+        const val DIVERSITY = 0.1f        // Penalty for similar videos
 
         // Weights within relevance score (must sum to 1.0)
         const val LOCATION = 0.94f        // Location matching and distance
@@ -71,19 +71,18 @@ class VideoRepository @Inject constructor(
         const val CATEGORY = 0.01f        // Category preferences
 
         // Distance decay factors (in meters)
-        const val LOCATION_DECAY_DISTANCE = 50000.0  // Reduced from 1000km to 50km for steeper distance penalty
-        const val SIMILARITY_DECAY_DISTANCE = 5000.0   // 5km scale for similarity calculation
+        const val LOCATION_DECAY_DISTANCE = 25000.0  // Reduced from 50km to 25km for steeper distance penalty
+        const val SIMILARITY_DECAY_DISTANCE = 5000.0  // 5km scale for similarity calculation
         
         // Time decay factors
         const val FRESHNESS_DECAY_RATE = 0.05  // Controls how quickly freshness score decays with age
     }
 
     private val metadataUpdateCache = mutableSetOf<String>()
-    private var lastRecommendationTime = 0L
-    private var cachedRecommendation: Video? = null
-    private var nextCachedRecommendation: Video? = null
-    private var isPreloading = false
-    private var preloadJob: kotlinx.coroutines.Job? = null
+    private var lastRegionUpdate = 0L
+    private val videoQueue = mutableListOf<Video>()
+    private var lastQueueUpdateTime = 0L
+    private var isProcessingQueue = false
 
     fun getVideosFlow(): Flow<List<Video>> = flow {
         try {
@@ -846,40 +845,23 @@ class VideoRepository @Inject constructor(
         try {
             val now = System.currentTimeMillis()
             
-            // If we have a cached recommendation, use it
-            if (cachedRecommendation != null) {
-                Log.d(TAG, "Using cached recommendation")
-                val video = cachedRecommendation
-                
-                // Move next cached recommendation to current
-                cachedRecommendation = nextCachedRecommendation
-                nextCachedRecommendation = null
-                lastRecommendationTime = now
-                
-                // Start preloading next recommendation if needed
-                if (cachedRecommendation == null) {
-                    preloadNextRecommendation(userId)
-                }
-                
-                return video
+            // Update regions if needed
+            if (now - lastRegionUpdate > 3600000L) {
+                updateVideoRegions()
+                lastRegionUpdate = now
             }
-
-            // If no cached recommendation, get one synchronously
-            Log.d(TAG, "No cached recommendation available, getting one synchronously")
-            val recommendedVideo = getRecommendedVideo(userId)
-            if (recommendedVideo != null) {
-                lastRecommendationTime = now
-                
-                // Start preloading next recommendation
-                preloadNextRecommendation(userId)
-                
-                return recommendedVideo
+            
+            // Check if queue needs replenishing
+            if (videoQueue.size < MIN_QUEUE_SIZE && !isProcessingQueue) {
+                replenishVideoQueue(userId)
             }
-
-            // Fallback to random video
-            return getRandomVideo()?.also {
-                lastRecommendationTime = now
-                preloadNextRecommendation(userId)
+            
+            // Return next video from queue if available
+            return if (videoQueue.isNotEmpty()) {
+                videoQueue.removeFirst()
+            } else {
+                // Fallback to getting a single recommendation
+                getRecommendedVideo(userId)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting next video: ${e.message}")
@@ -887,191 +869,116 @@ class VideoRepository @Inject constructor(
         }
     }
 
-    suspend fun preloadNextRecommendation(userId: String) {
-        // Cancel any existing preload job
-        preloadJob?.let { existingJob ->
-            existingJob.cancel()
-            // Wait a bit for the job to clean up
-            delay(50)
-        }
-        preloadJob = null  // Clear the reference
+    private suspend fun replenishVideoQueue(userId: String) {
+        if (isProcessingQueue) return
         
-        // Don't start a new preload if we already have a next recommendation cached
-        if (nextCachedRecommendation != null) {
-            Log.d(TAG, "Skipping preload - already have next recommendation cached")
-            return
-        }
-        
-        // Don't start a new preload if one is already in progress
-        if (isPreloading) {
-            Log.d(TAG, "Skipping preload - already in progress")
-            return
-        }
-
         try {
-            isPreloading = true
-            Log.d(TAG, "Starting preload of next recommendation")
+            isProcessingQueue = true
             
-            preloadJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob()).launch {
-                try {
-                    // Add a small delay to prevent rapid cancellations
-                    delay(100)
-                    
-                    // Check if the coroutine is still active
-                    if (!isActive) {
-                        Log.d(TAG, "Preload job cancelled during delay")
-                        return@launch
-                    }
-                    
-                    // Get a fresh recommendation for preloading
-                    nextCachedRecommendation = getRecommendedVideo(userId)
-                    Log.d(TAG, "Successfully preloaded next recommendation")
-                } catch (e: Exception) {
-                    when (e) {
-                        is kotlinx.coroutines.CancellationException -> {
-                            Log.d(TAG, "Preload job cancelled normally")
-                        }
-                        else -> {
-                            Log.e(TAG, "Error during preload: ${e.message}")
-                        }
-                    }
-                    nextCachedRecommendation = null
-                } finally {
-                    isPreloading = false
-                    preloadJob = null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initiating preload: ${e.message}")
-            isPreloading = false
-            nextCachedRecommendation = null
-            preloadJob = null
-        }
-    }
-
-    private suspend fun getRecommendedVideo(userId: String): Video? = coroutineScope {
-        try {
-            Log.d(TAG, "Starting recommendation process for user: $userId")
+            // Get user preferences
+            val preferences = getUserPreferences(userId)
             
-            // Get user preferences and recent videos in parallel
-            val (preferences, recentVideoIds) = coroutineScope {
-                val prefsDeferred = async { getUserPreferences(userId) }
-                val recentDeferred = async { 
-                    firestore.collection(ENGAGEMENTS_COLLECTION)
-                        .whereEqualTo("userId", userId)
-                        .orderBy("timestamp", Query.Direction.DESCENDING)
-                        .limit(10)
-                        .get()
-                        .await()
-                        .documents
-                        .mapNotNull { it.getString("videoId") }
-                }
-                Pair(prefsDeferred.await(), recentDeferred.await())
-            }
-
-            // Get preferred regions sorted by preference score
+            // Get recently viewed videos
+            val recentVideoIds = getRecentlyShownVideos(userId).map { it.id }
+            
+            // Get preferred regions
             val preferredRegions = preferences.preferredRegions.entries
                 .sortedByDescending { it.value }
-                .take(3) // Take top 3 preferred regions
+                .take(3)
                 .map { it.key }
             
-            Log.d(TAG, "User's top preferred regions: $preferredRegions")
-
-            // First try to get videos from preferred regions
-            var candidates = if (preferredRegions.isNotEmpty()) {
+            // Get candidates
+            val candidates = if (preferredRegions.isNotEmpty()) {
                 firestore.collection(VIDEOS_COLLECTION)
-                    .whereIn("region", preferredRegions) // Add region field to videos if not exists
-                    .limit(30)  // Smaller initial pool from preferred regions
+                    .whereIn("region", preferredRegions)
+                    .limit(20)
                     .get()
                     .await()
                     .documents
                     .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
                     .filter { video -> !recentVideoIds.contains(video.id) }
             } else {
-                emptyList()
-            }
-
-            // If we don't have enough candidates from preferred regions, get more videos
-            if (candidates.size < 10) {
-                Log.d(TAG, "Not enough candidates from preferred regions (${candidates.size}), getting more videos")
-                val additionalCandidates = firestore.collection(VIDEOS_COLLECTION)
-                    .limit(50)  // Reduced pool size for better performance
+                firestore.collection(VIDEOS_COLLECTION)
+                    .limit(10)
                     .get()
                     .await()
                     .documents
                     .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
-                    .filter { video -> 
-                        !recentVideoIds.contains(video.id) && 
-                        !candidates.any { it.id == video.id }
-                    }
-                candidates = candidates + additionalCandidates
+                    .filter { video -> !recentVideoIds.contains(video.id) }
             }
-
-            if (candidates.isEmpty()) {
-                Log.d(TAG, "No candidates found, falling back to random video")
-                return@coroutineScope getRandomVideo()
-            }
-
-            Log.d(TAG, "Scoring ${candidates.size} candidates")
-
-            // Score candidates in parallel
-            val scoredVideos = candidates.map { video ->
-                async(Dispatchers.Default) {
-                    val score = calculateRecommendationScore(video, preferences)
-                    video to score
-                }
-            }.awaitAll()
-
-            // Apply diversity boost to avoid similar videos
-            val diversifiedVideos = applyDiversityBoost(scoredVideos, userId)
-
-            // Return the highest scoring video
-            diversifiedVideos.maxByOrNull { it.second }?.first?.also {
-                Log.d(TAG, "Selected video ${it.id} as best recommendation")
-                Log.d(TAG, "Location: ${it.location}, Region: ${getRegionFromLocation(it.location)}")
-                Log.d(TAG, "Score components: ${it.componentScores}")
-            }
+            
+            // Score and sort candidates
+            val scoredCandidates = candidates.map { video ->
+                val score = calculateRecommendationScore(video, preferences)
+                video to score
+            }.sortedByDescending { it.second }
+            
+            // Apply diversity boost
+            val diversifiedCandidates = applyDiversityBoost(scoredCandidates, userId)
+            
+            // Add top candidates to queue
+            videoQueue.addAll(
+                diversifiedCandidates
+                    .take(QUEUE_SIZE - videoQueue.size)
+                    .map { it.first }
+            )
+            
+            lastQueueUpdateTime = System.currentTimeMillis()
+            
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting recommended video: ${e.message}")
-            getRandomVideo()
+            Log.e(TAG, "Error replenishing video queue: ${e.message}")
+        } finally {
+            isProcessingQueue = false
         }
     }
 
     private suspend fun calculateRecommendationScore(video: Video, preferences: UserPreferences): Float {
-        // Calculate all scores in one pass to avoid multiple map operations
+        Log.d(TAG, "\nCalculating recommendation score for video ${video.id}")
+        
         var languageScore = 0f
         var regionScore = 0f
         var categoryScore = 0f
         var difficultyMatch = 0f
         
-        // Language score
+        // Language score calculation
         video.primaryLanguage?.let { lang ->
             languageScore = preferences.preferredLanguages[lang] ?: 0f
+            Log.d(TAG, "Language score for $lang: $languageScore")
         }
 
-        // Region score - Enhanced to give higher scores to closer locations
+        // Region score calculation
         val region = getRegionFromLocation(video.location)
-        val baseRegionScore = preferences.preferredRegions[region] ?: 0f  // No base score for non-preferred regions
+        val baseRegionScore = preferences.preferredRegions[region] ?: 0f
         
-        // Calculate distance-based score for all preferred regions
-        val distanceBasedScore = if (preferences.preferredRegions.isEmpty()) {
-            0.1f  // Small base score when no preferences exist
-        } else {
-            preferences.preferredRegions.entries
-                .map { (prefRegion, prefScore) ->
-                    val prefLocation = getLocationFromRegion(prefRegion)
-                    val distance = calculateDistance(video.location, prefLocation)
-                    // Steeper exponential decay and lower base score
-                    val distanceScore = kotlin.math.exp(-distance / (RecommendationWeights.LOCATION_DECAY_DISTANCE * 0.5f)).toFloat() * 0.2f
-                    distanceScore * prefScore
-                }
-                .maxOrNull() ?: 0f
+        // Calculate weighted average of distance scores
+        var totalWeight = 0f
+        var weightedScoreSum = 0f
+        
+        preferences.preferredRegions.forEach { (prefRegion, prefScore) ->
+            val prefLocation = getLocationFromRegion(prefRegion)
+            val distance = calculateDistance(video.location, prefLocation)
+            
+            // Calculate distance-based score with exponential decay
+            val distanceScore = kotlin.math.exp(-distance / RecommendationWeights.LOCATION_DECAY_DISTANCE).toFloat()
+            
+            // Weight is 5x for preferred regions
+            val weight = if (prefRegion == region) 5f * prefScore else prefScore
+            
+            weightedScoreSum += distanceScore * weight
+            totalWeight += weight
+            
+            Log.d(TAG, "Distance score for region $prefRegion: $distanceScore (distance: ${distance/1000}km, weight: $weight)")
         }
         
-        // Only use distance-based score, no fallback to base score
-        regionScore = distanceBasedScore
+        regionScore = if (totalWeight > 0f) {
+            weightedScoreSum / totalWeight
+        } else {
+            0.1f // Base score for no preferences
+        }
+        
+        Log.d(TAG, "Final region score: $regionScore")
 
-        // Category score
+        // Category score calculation
         video.categories?.let { categories ->
             if (categories.isNotEmpty()) {
                 categoryScore = categories.map { category ->
@@ -1080,38 +987,33 @@ class VideoRepository @Inject constructor(
             }
         }
 
-        // Difficulty match
+        // Rest of scoring calculations
         difficultyMatch = 1f - kotlin.math.abs(video.difficulty?.minus(preferences.skillLevel) ?: 0f)
-
-        // Calculate freshness (exponential decay over 30 days)
+        
         val ageInDays = (System.currentTimeMillis() - video.createdAt) / (24 * 60 * 60 * 1000)
         val freshness = kotlin.math.exp(-RecommendationWeights.FRESHNESS_DECAY_RATE * ageInDays).toFloat()
-
-        // Calculate popularity score (normalized by time since creation)
-        val daysOld = maxOf(1, ageInDays)
+        
+        val daysOld = maxOf(1L, ageInDays)
         val popularityScore = (video.likes + video.comments) / (daysOld * 10f)
 
-        // Calculate relevance score with weighted components
+        // Calculate weighted component scores
         val weightedLocationScore = regionScore * RecommendationWeights.LOCATION
         val weightedLanguageScore = languageScore * RecommendationWeights.LANGUAGE
         val weightedCategoryScore = categoryScore * RecommendationWeights.CATEGORY
         
         video.relevanceScore = weightedLocationScore + weightedLanguageScore + weightedCategoryScore
         video.freshness = freshness
-
-        // Store all component scores for debugging
+        
         video.componentScores = mapOf(
             "relevance" to video.relevanceScore,
             "freshness" to freshness,
             "popularity" to popularityScore,
             "difficultyMatch" to difficultyMatch,
-            // Store raw component scores before weighting
             "location" to regionScore,
             "language" to languageScore,
             "category" to categoryScore
         )
 
-        // Return final weighted score
         return (
             video.relevanceScore * RecommendationWeights.RELEVANCE +
             freshness * RecommendationWeights.FRESHNESS +
@@ -1449,6 +1351,68 @@ class VideoRepository @Inject constructor(
             Log.d(TAG, "Completed region update for ${videos.size} videos")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating video regions: ${e.message}")
+        }
+    }
+
+    private suspend fun getRecommendedVideo(userId: String): Video? {
+        try {
+            Log.d(TAG, "Getting recommended video for user $userId")
+            
+            // Get user preferences
+            val preferences = getUserPreferences(userId)
+            
+            // Get recently viewed videos to avoid repeats
+            val recentVideoIds = firestore.collection(ENGAGEMENTS_COLLECTION)
+                .whereEqualTo("userId", userId)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(10)
+                .get()
+                .await()
+                .documents
+                .mapNotNull { it.getString("videoId") }
+            
+            // Get preferred regions
+            val preferredRegions = preferences.preferredRegions.entries
+                .sortedByDescending { it.value }
+                .take(3)
+                .map { it.key }
+            
+            // First try to get videos from preferred regions
+            var candidates = if (preferredRegions.isNotEmpty()) {
+                firestore.collection(VIDEOS_COLLECTION)
+                    .whereIn("region", preferredRegions)
+                    .limit(10)
+                    .get()
+                    .await()
+                    .documents
+                    .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+                    .filter { video -> !recentVideoIds.contains(video.id) }
+            } else emptyList()
+
+            // If no candidates from preferred regions, get any videos
+            if (candidates.isEmpty()) {
+                candidates = firestore.collection(VIDEOS_COLLECTION)
+                    .limit(5)
+                    .get()
+                    .await()
+                    .documents
+                    .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+                    .filter { video -> !recentVideoIds.contains(video.id) }
+            }
+
+            // Score candidates and apply diversity boost
+            val scoredCandidates = candidates.map { video ->
+                val score = calculateRecommendationScore(video, preferences)
+                video to score
+            }
+            
+            val diversityBoostedCandidates = applyDiversityBoost(scoredCandidates, userId)
+            
+            // Return the highest scoring candidate
+            return diversityBoostedCandidates.maxByOrNull { (_, score) -> score }?.first
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting recommended video: ${e.message}")
+            return null
         }
     }
 } 

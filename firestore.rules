@@ -16,7 +16,7 @@ service cloud.firestore {
           request.auth.uid == resource.data.authorId ||
           // Allow any authenticated user to update engagement and metadata fields
           request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['likes', 'comments', 'primaryLanguage', 'languageConfidence', 'languageUpdatedAt', 'authorUsername', 'categories', 'difficulty'])
+              .hasOnly(['likes', 'comments', 'primaryLanguage', 'languageConfidence', 'languageUpdatedAt', 'authorUsername', 'categories', 'difficulty', 'region'])
       );
       allow delete: if request.auth != null && request.auth.uid == resource.data.authorId;
     }

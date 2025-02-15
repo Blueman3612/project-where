@@ -164,8 +164,8 @@ class MainViewModel @Inject constructor(
                     }
                 }
 
-                // Always start preloading the next video after setting current
-                videoRepository.preloadNextRecommendation(userId)
+                // Reset view tracking for the next video
+                hasRecordedCurrentView = false
             } catch (e: Exception) {
                 _error.value = "Error loading video: ${e.message}"
             } finally {
@@ -176,8 +176,31 @@ class MainViewModel @Inject constructor(
 
     // Update switchToNextVideo to handle preloading
     fun switchToNextVideo() {
-        hasRecordedCurrentView = false
-        loadNextVideo()
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+                
+                // Get the next video from the queue
+                val nextVideo = videoRepository.getNextVideo(auth.currentUser?.uid ?: return@launch)
+                
+                if (nextVideo != null) {
+                    _currentVideo.value = nextVideo
+                    _currentVideoUrl.value = nextVideo
+                    _currentLikeCount.value = nextVideo.likes
+                    _isLiked.value = videoRepository.isVideoLiked(nextVideo.id, auth.currentUser?.uid ?: return@launch)
+                    
+                    // Record the view
+                    videoRepository.recordVideoView(nextVideo.id, auth.currentUser?.uid ?: return@launch)
+                } else {
+                    _error.value = "No more videos available"
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error switching to next video: ${e.message}")
+                _error.value = "Error loading next video"
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     fun revealLanguageHint() {
