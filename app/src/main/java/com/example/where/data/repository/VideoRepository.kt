@@ -51,9 +51,11 @@ class VideoRepository @Inject constructor(
         private const val ENGAGEMENTS_COLLECTION = "engagements"
         private const val USER_PREFERENCES_COLLECTION = "user_preferences"
         
-        // Cache settings
-        private const val QUEUE_SIZE = 5 // Number of videos to keep in queue
-        private const val MIN_QUEUE_SIZE = 2 // Trigger new processing when queue size is below this
+        // Queue settings
+        private const val INITIAL_BATCH_SIZE = 10     // Increased from 3
+        private const val BACKGROUND_BATCH_SIZE = 50  // Increased from 20
+        private const val TARGET_QUEUE_SIZE = 15     // Increased from 10
+        private const val MIN_QUEUE_SIZE = 5         // Increased from 3
     }
 
     // Centralized weights for recommendation system
@@ -71,11 +73,11 @@ class VideoRepository @Inject constructor(
         const val CATEGORY = 0.01f        // Category preferences
 
         // Distance decay factors (in meters)
-        const val LOCATION_DECAY_DISTANCE = 25000.0  // Reduced from 50km to 25km for steeper distance penalty
-        const val SIMILARITY_DECAY_DISTANCE = 5000.0  // 5km scale for similarity calculation
+        const val LOCATION_DECAY_DISTANCE = 3000000.0  // 3000km characteristic distance
+        const val SIMILARITY_DECAY_DISTANCE = 10000.0   // 10km scale for similarity calculation
         
         // Time decay factors
-        const val FRESHNESS_DECAY_RATE = 0.05  // Controls how quickly freshness score decays with age
+        const val FRESHNESS_DECAY_RATE = 0.03  // Reduced from 0.05 for slower decay
     }
 
     private val metadataUpdateCache = mutableSetOf<String>()
@@ -83,6 +85,7 @@ class VideoRepository @Inject constructor(
     private val videoQueue = mutableListOf<Video>()
     private var lastQueueUpdateTime = 0L
     private var isProcessingQueue = false
+    private var backgroundProcessingJob: kotlinx.coroutines.Job? = null
 
     fun getVideosFlow(): Flow<List<Video>> = flow {
         try {
@@ -845,23 +848,26 @@ class VideoRepository @Inject constructor(
         try {
             val now = System.currentTimeMillis()
             
-            // Update regions if needed
+            // Update regions if needed (hourly)
             if (now - lastRegionUpdate > 3600000L) {
                 updateVideoRegions()
                 lastRegionUpdate = now
             }
             
-            // Check if queue needs replenishing
-            if (videoQueue.size < MIN_QUEUE_SIZE && !isProcessingQueue) {
-                replenishVideoQueue(userId)
+            // Start background processing if not already running
+            startBackgroundProcessing(userId)
+            
+            // If queue is low, quickly replenish
+            if (videoQueue.size < MIN_QUEUE_SIZE) {
+                replenishQueueQuickly(userId)
             }
             
             // Return next video from queue if available
             return if (videoQueue.isNotEmpty()) {
                 videoQueue.removeFirst()
             } else {
-                // Fallback to getting a single recommendation
-                getRecommendedVideo(userId)
+                // Emergency fallback
+                getRandomVideo()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting next video: ${e.message}")
@@ -869,64 +875,150 @@ class VideoRepository @Inject constructor(
         }
     }
 
-    private suspend fun replenishVideoQueue(userId: String) {
+    // Function to start background processing
+    private fun startBackgroundProcessing(userId: String) {
+        if (backgroundProcessingJob?.isActive == true) return
+        
+        backgroundProcessingJob = GlobalScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                try {
+                    if (videoQueue.size < TARGET_QUEUE_SIZE && !isProcessingQueue) {
+                        replenishQueueInBackground(userId)
+                    }
+                    delay(5000) // Wait 5 seconds before checking queue again
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in background processing: ${e.message}")
+                    delay(10000) // Wait longer if there was an error
+                }
+            }
+        }
+    }
+
+    // Quick initial queue replenishment
+    private suspend fun replenishQueueQuickly(userId: String) {
         if (isProcessingQueue) return
         
         try {
             isProcessingQueue = true
             
-            // Get user preferences
             val preferences = getUserPreferences(userId)
-            
-            // Get recently viewed videos
             val recentVideoIds = getRecentlyShownVideos(userId).map { it.id }
             
-            // Get preferred regions
+            // Get a mix of preferred and random regions
             val preferredRegions = preferences.preferredRegions.entries
                 .sortedByDescending { it.value }
                 .take(3)
                 .map { it.key }
             
-            // Get candidates
-            val candidates = if (preferredRegions.isNotEmpty()) {
-                firestore.collection(VIDEOS_COLLECTION)
-                    .whereIn("region", preferredRegions)
-                    .limit(20)
-                    .get()
-                    .await()
-                    .documents
-                    .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
-                    .filter { video -> !recentVideoIds.contains(video.id) }
-            } else {
-                firestore.collection(VIDEOS_COLLECTION)
-                    .limit(10)
-                    .get()
-                    .await()
-                    .documents
-                    .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+            // Get candidates from both preferred regions AND random videos
+            val candidates = coroutineScope {
+                val preferredCandidates = async {
+                    if (preferredRegions.isNotEmpty()) {
+                        firestore.collection(VIDEOS_COLLECTION)
+                            .whereIn("region", preferredRegions)
+                            .limit((INITIAL_BATCH_SIZE / 2).toLong())
+                            .get()
+                            .await()
+                            .documents
+                            .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+                    } else emptyList()
+                }
+                
+                val randomCandidates = async {
+                    firestore.collection(VIDEOS_COLLECTION)
+                        .orderBy("createdAt", Query.Direction.DESCENDING)  // Get newer videos first
+                        .limit(INITIAL_BATCH_SIZE.toLong())
+                        .get()
+                        .await()
+                        .documents
+                        .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+                }
+                
+                (preferredCandidates.await() + randomCandidates.await())
+                    .distinctBy { it.id }
                     .filter { video -> !recentVideoIds.contains(video.id) }
             }
             
-            // Score and sort candidates
+            // Quick scoring without diversity boost
             val scoredCandidates = candidates.map { video ->
                 val score = calculateRecommendationScore(video, preferences)
                 video to score
             }.sortedByDescending { it.second }
             
-            // Apply diversity boost
-            val diversifiedCandidates = applyDiversityBoost(scoredCandidates, userId)
-            
-            // Add top candidates to queue
-            videoQueue.addAll(
-                diversifiedCandidates
-                    .take(QUEUE_SIZE - videoQueue.size)
-                    .map { it.first }
-            )
-            
-            lastQueueUpdateTime = System.currentTimeMillis()
+            // Add to queue
+            videoQueue.addAll(scoredCandidates.map { it.first })
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error replenishing video queue: ${e.message}")
+            Log.e(TAG, "Error in quick queue replenishment: ${e.message}")
+        } finally {
+            isProcessingQueue = false
+        }
+    }
+
+    // Thorough background queue replenishment
+    private suspend fun replenishQueueInBackground(userId: String) {
+        if (isProcessingQueue) return
+        
+        try {
+            isProcessingQueue = true
+            
+            val preferences = getUserPreferences(userId)
+            val recentVideoIds = getRecentlyShownVideos(userId).map { it.id }
+            
+            // Get a diverse set of candidates
+            val candidates = coroutineScope {
+                val preferredRegionsCandidates = async {
+                    val preferredRegions = preferences.preferredRegions.entries
+                        .sortedByDescending { it.value }
+                        .take(5)  // Increased from 3
+                        .map { it.key }
+                    
+                    if (preferredRegions.isNotEmpty()) {
+                        firestore.collection(VIDEOS_COLLECTION)
+                            .whereIn("region", preferredRegions)
+                            .limit((BACKGROUND_BATCH_SIZE / 3).toLong())
+                            .get()
+                            .await()
+                            .documents
+                            .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+                    } else emptyList()
+                }
+                
+                val randomCandidates = async {
+                    firestore.collection(VIDEOS_COLLECTION)
+                        .orderBy("createdAt", Query.Direction.DESCENDING)  // Order by creation time
+                        .limit((BACKGROUND_BATCH_SIZE * 2 / 3).toLong())
+                        .get()
+                        .await()
+                        .documents
+                        .mapNotNull { doc -> doc.data?.let { Video.fromMap(it) } }
+                }
+                
+                (preferredRegionsCandidates.await() + randomCandidates.await())
+                    .distinctBy { it.id }
+                    .filter { video -> !recentVideoIds.contains(video.id) }
+            }
+            
+            // Thorough scoring with diversity boost
+            val scoredCandidates = candidates.map { video ->
+                val score = calculateRecommendationScore(video, preferences)
+                video to score
+            }
+            
+            val diversifiedCandidates = applyDiversityBoost(scoredCandidates, userId)
+            
+            // Add to queue up to target size
+            val spaceInQueue = TARGET_QUEUE_SIZE - videoQueue.size
+            if (spaceInQueue > 0) {
+                videoQueue.addAll(
+                    diversifiedCandidates
+                        .take(spaceInQueue)
+                        .map { it.first }
+                )
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in background queue replenishment: ${e.message}")
         } finally {
             isProcessingQueue = false
         }
@@ -948,42 +1040,43 @@ class VideoRepository @Inject constructor(
 
         // Region score calculation
         val region = getRegionFromLocation(video.location)
-        val baseRegionScore = preferences.preferredRegions[region] ?: 0f
-        
-        // Calculate weighted average of distance scores
+        var totalWeightedScore = 0f
         var totalWeight = 0f
-        var weightedScoreSum = 0f
         
         preferences.preferredRegions.forEach { (prefRegion, prefScore) ->
             val prefLocation = getLocationFromRegion(prefRegion)
             val distance = calculateDistance(video.location, prefLocation)
+            val distanceKm = distance / 1000.0  // Convert to kilometers
             
-            // Calculate distance-based score with exponential decay
-            val distanceScore = kotlin.math.exp(-distance / RecommendationWeights.LOCATION_DECAY_DISTANCE).toFloat()
+            // Calculate distance-based score with softer exponential decay
+            val distanceScore = when {
+                prefRegion == region -> 1.0f
+                else -> {
+                    val decay = kotlin.math.exp(-distanceKm / 3000.0).toFloat()  // Slower decay
+                    maxOf(decay, if (distanceKm < 5000) 0.2f else 0.1f)  // Minimum score based on distance
+                }
+            }
             
-            // Weight is 5x for preferred regions
-            val weight = if (prefRegion == region) 5f * prefScore else prefScore
+            // Weight based on preference strength
+            val weightedScore = distanceScore * prefScore
+            totalWeightedScore += weightedScore
+            totalWeight += prefScore
             
-            weightedScoreSum += distanceScore * weight
-            totalWeight += weight
-            
-            Log.d(TAG, "Distance score for region $prefRegion: $distanceScore (distance: ${distance/1000}km, weight: $weight)")
+            Log.d(TAG, "Region $prefRegion (pref: $prefScore) - distance: ${distanceKm}km, score: $distanceScore, weighted: $weightedScore")
         }
         
-        regionScore = if (totalWeight > 0f) {
-            weightedScoreSum / totalWeight
-        } else {
-            0.1f // Base score for no preferences
-        }
+        // Use weighted average for region score
+        regionScore = if (totalWeight > 0f) totalWeightedScore / totalWeight else 0f
         
         Log.d(TAG, "Final region score: $regionScore")
 
-        // Category score calculation
+        // Category score calculation with minimum score
         video.categories?.let { categories ->
             if (categories.isNotEmpty()) {
-                categoryScore = categories.map { category ->
-                    preferences.preferredCategories[category] ?: 0f
-                }.average().toFloat()
+                val categoryScores = categories.map { category ->
+                    preferences.preferredCategories[category] ?: 0.1f  // Minimum score for any category
+                }
+                categoryScore = categoryScores.average().toFloat()
             }
         }
 
@@ -994,7 +1087,7 @@ class VideoRepository @Inject constructor(
         val freshness = kotlin.math.exp(-RecommendationWeights.FRESHNESS_DECAY_RATE * ageInDays).toFloat()
         
         val daysOld = maxOf(1L, ageInDays)
-        val popularityScore = (video.likes + video.comments) / (daysOld * 10f)
+        val popularityScore = minOf(1f, (video.likes + video.comments) / (daysOld * 5f))  // Cap at 1.0
 
         // Calculate weighted component scores
         val weightedLocationScore = regionScore * RecommendationWeights.LOCATION
@@ -1029,13 +1122,15 @@ class VideoRepository @Inject constructor(
             val latRegion = parts[0].toIntOrNull() ?: 0
             val lngRegion = parts[1].toIntOrNull() ?: 0
             
-            // Convert region indices back to coordinates
-            val lat = (latRegion * 30) - 90 + 15 // Center of the region
-            val lng = (lngRegion * 30) - 180 + 15 // Center of the region
+            // Convert region indices to coordinates
+            // LAT: 0=90°S, 6=90°N in 30° increments
+            // LNG: 0=180°W to 11=180°E in 30° increments
+            val lat = ((latRegion.toDouble() * 30.0) - 90.0 + 15.0).coerceIn(-90.0, 90.0)
+            val lng = ((lngRegion.toDouble() * 30.0) - 180.0 + 15.0).coerceIn(-180.0, 180.0)
             
-            return LatLng(lat.toDouble(), lng.toDouble())
+            return LatLng(lat, lng)
         }
-        return LatLng(0.0, 0.0) // Default to null island if invalid region
+        return LatLng(0.0, 0.0)
     }
 
     private fun calculateVideoSimilarity(video1: Video, video2: Video): Double {
@@ -1074,12 +1169,11 @@ class VideoRepository @Inject constructor(
     }
 
     private fun getRegionFromLocation(location: LatLng): String {
-        // Simple region calculation based on lat/lng grid
-        val lat = location.latitude
-        val lng = location.longitude
-        
-        val latRegion = ((lat + 90) / 30).toInt()
-        val lngRegion = ((lng + 180) / 30).toInt()
+        // Convert lat/lng to region indices
+        // LAT: -90 to 90 → 0 to 6
+        // LNG: -180 to 180 → 0 to 11
+        val latRegion = ((location.latitude + 90.0) / 30.0).toInt().coerceIn(0, 6)
+        val lngRegion = ((location.longitude + 180.0) / 30.0).toInt().coerceIn(0, 11)
         
         return "r${latRegion}_${lngRegion}"
     }
