@@ -1038,37 +1038,10 @@ class VideoRepository @Inject constructor(
             Log.d(TAG, "Language score for $lang: $languageScore")
         }
 
-        // Region score calculation
-        val region = getRegionFromLocation(video.location)
-        var totalWeightedScore = 0f
-        var totalWeight = 0f
-        
-        preferences.preferredRegions.forEach { (prefRegion, prefScore) ->
-            val prefLocation = getLocationFromRegion(prefRegion)
-            val distance = calculateDistance(video.location, prefLocation)
-            val distanceKm = distance / 1000.0  // Convert to kilometers
-            
-            // Calculate distance-based score with softer exponential decay
-            val distanceScore = when {
-                prefRegion == region -> 1.0f
-                else -> {
-                    val decay = kotlin.math.exp(-distanceKm / 3000.0).toFloat()  // Slower decay
-                    maxOf(decay, if (distanceKm < 5000) 0.2f else 0.1f)  // Minimum score based on distance
-                }
-            }
-            
-            // Weight based on preference strength
-            val weightedScore = distanceScore * prefScore
-            totalWeightedScore += weightedScore
-            totalWeight += prefScore
-            
-            Log.d(TAG, "Region $prefRegion (pref: $prefScore) - distance: ${distanceKm}km, score: $distanceScore, weighted: $weightedScore")
-        }
-        
-        // Use weighted average for region score
-        regionScore = if (totalWeight > 0f) totalWeightedScore / totalWeight else 0f
-        
-        Log.d(TAG, "Final region score: $regionScore")
+        // Simplified region score calculation - direct preference match
+        val region = video.region ?: getRegionFromLocation(video.location)
+        regionScore = preferences.preferredRegions[region] ?: 0.1f // Base score of 0.1 (10%) for non-preferred regions
+        Log.d(TAG, "Region score for $region: $regionScore (preference: ${preferences.preferredRegions[region]})")
 
         // Category score calculation with minimum score
         video.categories?.let { categories ->
